@@ -1,0 +1,522 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd">
+<html>
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+  <meta http-equiv="Content-Style-Type" content="text/css">
+  <title></title>
+  <meta name="Generator" content="Cocoa HTML Writer">
+  <meta name="CocoaVersion" content="2575.7">
+  <style type="text/css">
+    p.p1 {margin: 0.0px 0.0px 0.0px 0.0px; font: 12.0px Helvetica}
+    p.p2 {margin: 0.0px 0.0px 0.0px 0.0px; font: 12.0px Helvetica; min-height: 14.0px}
+  </style>
+</head>
+<body>
+<p class="p1">&lt;!DOCTYPE html&gt;</p>
+<p class="p1">&lt;html lang="en"&gt;</p>
+<p class="p1">&lt;head&gt;</p>
+<p class="p1">&lt;meta charset="UTF-8"&gt;</p>
+<p class="p1">&lt;title&gt;ShaqBall 3D&lt;/title&gt;</p>
+<p class="p1">&lt;style&gt;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>* { margin: 0; padding: 0; box-sizing: border-box; }</p>
+<p class="p1"><span class="Apple-converted-space">  </span>body { background: #000; overflow: hidden; font-family: monospace; }</p>
+<p class="p1"><span class="Apple-converted-space">  </span>canvas { display: block; }</p>
+<p class="p1"><span class="Apple-converted-space">  </span>#title {</p>
+<p class="p1"><span class="Apple-converted-space">    </span>position: fixed; top: 16px; left: 50%; transform: translateX(-50%);</p>
+<p class="p1"><span class="Apple-converted-space">    </span>font-size: 28px; font-weight: 900; color: #fff; letter-spacing: 4px;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>text-shadow: 0 0 20px #0ff, 0 0 40px #0ff; pointer-events: none;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>}</p>
+<p class="p1"><span class="Apple-converted-space">  </span>#controls {</p>
+<p class="p1"><span class="Apple-converted-space">    </span>position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);</p>
+<p class="p1"><span class="Apple-converted-space">    </span>color: rgba(255,255,255,0.5); font-size: 12px; pointer-events: none;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>}</p>
+<p class="p1">&lt;/style&gt;</p>
+<p class="p1">&lt;/head&gt;</p>
+<p class="p1">&lt;body&gt;</p>
+<p class="p1">&lt;canvas id="c"&gt;&lt;/canvas&gt;</p>
+<p class="p1">&lt;div id="title"&gt;SHAQBALL 3D&lt;/div&gt;</p>
+<p class="p1">&lt;div id="controls"&gt;WASD tilt &amp;nbsp;|&amp;nbsp; ← → ↑ ↓ orbit camera &amp;nbsp;|&amp;nbsp; SPACE jump &amp;nbsp;|&amp;nbsp; R reset&lt;/div&gt;</p>
+<p class="p2"><br></p>
+<p class="p1">&lt;script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"&gt;&lt;/script&gt;</p>
+<p class="p1">&lt;script&gt;</p>
+<p class="p2"><br></p>
+<p class="p1">// ── CONFIG ────────────────────────────────────────────────────────────────────</p>
+<p class="p1">const P = {</p>
+<p class="p1"><span class="Apple-converted-space">  </span>mass: 1.0, radius: 0.5,</p>
+<p class="p1"><span class="Apple-converted-space">  </span>gravity: 25,</p>
+<p class="p1"><span class="Apple-converted-space">  </span>tiltSpeed: 80, tiltMax: 15, tiltReturn: 120,</p>
+<p class="p1"><span class="Apple-converted-space">  </span>stageSize: 50,<span class="Apple-converted-space">  </span>// half-extent → 100×100 total</p>
+<p class="p1">};</p>
+<p class="p1">const I_BALL = 0.4 * P.mass * P.radius * P.radius;</p>
+<p class="p2"><br></p>
+<p class="p1">// ── MATERIALS ─────────────────────────────────────────────────────────────────</p>
+<p class="p1">const MATERIALS = {</p>
+<p class="p1"><span class="Apple-converted-space">  </span>default: {</p>
+<p class="p1"><span class="Apple-converted-space">    </span>friction: 0.6, restitution: 0.4, rollingResist: 0.1,</p>
+<p class="p1"><span class="Apple-converted-space">    </span>appearance: {</p>
+<p class="p1"><span class="Apple-converted-space">      </span>color: 0xffffff, roughness: 0.8, metalness: 0.1,</p>
+<p class="p1"><span class="Apple-converted-space">      </span>texture(ctx, s) {</p>
+<p class="p1"><span class="Apple-converted-space">        </span>const q = s / 8;</p>
+<p class="p1"><span class="Apple-converted-space">        </span>for (let i = 0; i &lt; 8; i++) for (let j = 0; j &lt; 8; j++) {</p>
+<p class="p1"><span class="Apple-converted-space">          </span>ctx.fillStyle = (i+j)%2 ? '#6b3f1e' : '#8b5a2b';</p>
+<p class="p1"><span class="Apple-converted-space">          </span>ctx.fillRect(i*q, j*q, q, q);</p>
+<p class="p1"><span class="Apple-converted-space">          </span>ctx.strokeStyle = 'rgba(40,20,5,0.3)'; ctx.lineWidth = 1;</p>
+<p class="p1"><span class="Apple-converted-space">          </span>ctx.strokeRect(i*q+.5, j*q+.5, q-1, q-1);</p>
+<p class="p1"><span class="Apple-converted-space">        </span>}</p>
+<p class="p1"><span class="Apple-converted-space">      </span>},</p>
+<p class="p1"><span class="Apple-converted-space">    </span>},</p>
+<p class="p1"><span class="Apple-converted-space">  </span>},</p>
+<p class="p1"><span class="Apple-converted-space">  </span>wood: {</p>
+<p class="p1"><span class="Apple-converted-space">    </span>friction: 0.6, restitution: 0.3, rollingResist: 0.016,</p>
+<p class="p1"><span class="Apple-converted-space">    </span>appearance: {</p>
+<p class="p1"><span class="Apple-converted-space">      </span>color: 0xc8a96e, roughness: 0.85, metalness: 0,</p>
+<p class="p1"><span class="Apple-converted-space">      </span>texture(ctx, s) {</p>
+<p class="p1"><span class="Apple-converted-space">        </span>ctx.fillStyle = '#c8a96e'; ctx.fillRect(0, 0, s, s);</p>
+<p class="p1"><span class="Apple-converted-space">        </span>ctx.strokeStyle = 'rgba(90,55,20,0.18)'; ctx.lineWidth = 2;</p>
+<p class="p1"><span class="Apple-converted-space">        </span>for (let y = 0; y &lt; s; y += s/12) {</p>
+<p class="p1"><span class="Apple-converted-space">          </span>ctx.beginPath(); ctx.moveTo(0, y);</p>
+<p class="p1"><span class="Apple-converted-space">          </span>for (let x = 0; x &lt; s; x += 4) ctx.lineTo(x, y + Math.sin((x+y)*0.08)*8);</p>
+<p class="p1"><span class="Apple-converted-space">          </span>ctx.stroke();</p>
+<p class="p1"><span class="Apple-converted-space">        </span>}</p>
+<p class="p1"><span class="Apple-converted-space">      </span>},</p>
+<p class="p1"><span class="Apple-converted-space">    </span>},</p>
+<p class="p1"><span class="Apple-converted-space">  </span>},</p>
+<p class="p1"><span class="Apple-converted-space">  </span>ice: {</p>
+<p class="p1"><span class="Apple-converted-space">    </span>friction: 0.05, restitution: 0.1, rollingResist: 0.002,</p>
+<p class="p1"><span class="Apple-converted-space">    </span>appearance: {</p>
+<p class="p1"><span class="Apple-converted-space">      </span>color: 0xaadeff, roughness: 0.05, metalness: 0.4, transparent: false,</p>
+<p class="p1"><span class="Apple-converted-space">      </span>texture(ctx, s) {</p>
+<p class="p1"><span class="Apple-converted-space">        </span>ctx.fillStyle = '#cceeff'; ctx.fillRect(0, 0, s, s);</p>
+<p class="p1"><span class="Apple-converted-space">        </span>ctx.strokeStyle = 'rgba(180,220,255,0.6)'; ctx.lineWidth = 1;</p>
+<p class="p1"><span class="Apple-converted-space">        </span>for (let i = 0; i &lt; 10; i++) {</p>
+<p class="p1"><span class="Apple-converted-space">          </span>ctx.beginPath();</p>
+<p class="p1"><span class="Apple-converted-space">          </span>let x = Math.random()*s, y = Math.random()*s; ctx.moveTo(x, y);</p>
+<p class="p1"><span class="Apple-converted-space">          </span>for (let k = 0; k &lt; 4; k++) { x += (Math.random()-.5)*s*.3; y += (Math.random()-.5)*s*.3; ctx.lineTo(x,y); }</p>
+<p class="p1"><span class="Apple-converted-space">          </span>ctx.stroke();</p>
+<p class="p1"><span class="Apple-converted-space">        </span>}</p>
+<p class="p1"><span class="Apple-converted-space">      </span>},</p>
+<p class="p1"><span class="Apple-converted-space">    </span>},</p>
+<p class="p1"><span class="Apple-converted-space">  </span>},</p>
+<p class="p1"><span class="Apple-converted-space">  </span>rubber: {</p>
+<p class="p1"><span class="Apple-converted-space">    </span>friction: 0.9, restitution: 0.95, rollingResist: 0.04,</p>
+<p class="p1"><span class="Apple-converted-space">    </span>appearance: {</p>
+<p class="p1"><span class="Apple-converted-space">      </span>color: 0x222222, roughness: 0.95, metalness: 0,</p>
+<p class="p1"><span class="Apple-converted-space">      </span>texture(ctx, s) {</p>
+<p class="p1"><span class="Apple-converted-space">        </span>ctx.fillStyle = '#222'; ctx.fillRect(0, 0, s, s);</p>
+<p class="p1"><span class="Apple-converted-space">        </span>ctx.strokeStyle = 'rgba(80,80,80,0.5)'; ctx.lineWidth = 1;</p>
+<p class="p1"><span class="Apple-converted-space">        </span>const d = s/8;</p>
+<p class="p1"><span class="Apple-converted-space">        </span>for (let i = -1; i &lt; 9; i++) for (let j = -1; j &lt; 9; j++) {</p>
+<p class="p1"><span class="Apple-converted-space">          </span>const cx = i*d+(j%2)*d*.5, cy = j*d;</p>
+<p class="p1"><span class="Apple-converted-space">          </span>ctx.beginPath(); ctx.moveTo(cx, cy-d*.4); ctx.lineTo(cx+d*.4, cy);</p>
+<p class="p1"><span class="Apple-converted-space">          </span>ctx.lineTo(cx, cy+d*.4); ctx.lineTo(cx-d*.4, cy); ctx.closePath(); ctx.stroke();</p>
+<p class="p1"><span class="Apple-converted-space">        </span>}</p>
+<p class="p1"><span class="Apple-converted-space">      </span>},</p>
+<p class="p1"><span class="Apple-converted-space">    </span>},</p>
+<p class="p1"><span class="Apple-converted-space">  </span>},</p>
+<p class="p1"><span class="Apple-converted-space">  </span>metal: {</p>
+<p class="p1"><span class="Apple-converted-space">    </span>friction: 0.4, restitution: 0.5, rollingResist: 0.008,</p>
+<p class="p1"><span class="Apple-converted-space">    </span>appearance: {</p>
+<p class="p1"><span class="Apple-converted-space">      </span>color: 0x8899aa, roughness: 0.3, metalness: 0.9,</p>
+<p class="p1"><span class="Apple-converted-space">      </span>texture(ctx, s) {</p>
+<p class="p1"><span class="Apple-converted-space">        </span>for (let y = 0; y &lt; s; y += 2) {</p>
+<p class="p1"><span class="Apple-converted-space">          </span>const v = 136 + Math.floor(Math.random()*20-10);</p>
+<p class="p1"><span class="Apple-converted-space">          </span>ctx.fillStyle = `rgb(${v},${v+8},${v+16})`; ctx.fillRect(0, y, s, 1);</p>
+<p class="p1"><span class="Apple-converted-space">        </span>}</p>
+<p class="p1"><span class="Apple-converted-space">        </span>ctx.fillStyle = 'rgba(60,70,80,0.6)';</p>
+<p class="p1"><span class="Apple-converted-space">        </span>const sp = s/4;</p>
+<p class="p1"><span class="Apple-converted-space">        </span>for (let i = 0; i &lt; 4; i++) for (let j = 0; j &lt; 4; j++) {</p>
+<p class="p1"><span class="Apple-converted-space">          </span>ctx.beginPath(); ctx.arc(i*sp+sp/2, j*sp+sp/2, 4, 0, Math.PI*2); ctx.fill();</p>
+<p class="p1"><span class="Apple-converted-space">        </span>}</p>
+<p class="p1"><span class="Apple-converted-space">      </span>},</p>
+<p class="p1"><span class="Apple-converted-space">    </span>},</p>
+<p class="p1"><span class="Apple-converted-space">  </span>},</p>
+<p class="p1"><span class="Apple-converted-space">  </span>concrete: {</p>
+<p class="p1"><span class="Apple-converted-space">    </span>friction: 0.7, restitution: 0.2, rollingResist: 0.02,</p>
+<p class="p1"><span class="Apple-converted-space">    </span>appearance: {</p>
+<p class="p1"><span class="Apple-converted-space">      </span>color: 0x999999, roughness: 0.95, metalness: 0,</p>
+<p class="p1"><span class="Apple-converted-space">      </span>texture(ctx, s) {</p>
+<p class="p1"><span class="Apple-converted-space">        </span>ctx.fillStyle = '#999'; ctx.fillRect(0, 0, s, s);</p>
+<p class="p1"><span class="Apple-converted-space">        </span>for (let i = 0; i &lt; 3000; i++) {</p>
+<p class="p1"><span class="Apple-converted-space">          </span>const v = Math.floor(Math.random()*60+120);</p>
+<p class="p1"><span class="Apple-converted-space">          </span>ctx.fillStyle = `rgba(${v},${v},${v},0.3)`;</p>
+<p class="p1"><span class="Apple-converted-space">          </span>ctx.fillRect(Math.random()*s, Math.random()*s, 2, 2);</p>
+<p class="p1"><span class="Apple-converted-space">        </span>}</p>
+<p class="p1"><span class="Apple-converted-space">        </span>ctx.strokeStyle = 'rgba(80,80,80,0.4)'; ctx.lineWidth = 2;</p>
+<p class="p1"><span class="Apple-converted-space">        </span>[s/3, s*2/3].forEach(p =&gt; {</p>
+<p class="p1"><span class="Apple-converted-space">          </span>ctx.beginPath(); ctx.moveTo(p,0); ctx.lineTo(p,s); ctx.stroke();</p>
+<p class="p1"><span class="Apple-converted-space">          </span>ctx.beginPath(); ctx.moveTo(0,p); ctx.lineTo(s,p); ctx.stroke();</p>
+<p class="p1"><span class="Apple-converted-space">        </span>});</p>
+<p class="p1"><span class="Apple-converted-space">      </span>},</p>
+<p class="p1"><span class="Apple-converted-space">    </span>},</p>
+<p class="p1"><span class="Apple-converted-space">  </span>},</p>
+<p class="p1"><span class="Apple-converted-space">  </span>sand: {</p>
+<p class="p1"><span class="Apple-converted-space">    </span>friction: 0.8, restitution: 0.05, rollingResist: 0.3,</p>
+<p class="p1"><span class="Apple-converted-space">    </span>appearance: {</p>
+<p class="p1"><span class="Apple-converted-space">      </span>color: 0xe8d5a3, roughness: 1.0, metalness: 0,</p>
+<p class="p1"><span class="Apple-converted-space">      </span>texture(ctx, s) {</p>
+<p class="p1"><span class="Apple-converted-space">        </span>ctx.fillStyle = '#e8d5a3'; ctx.fillRect(0, 0, s, s);</p>
+<p class="p1"><span class="Apple-converted-space">        </span>for (let i = 0; i &lt; 6000; i++) {</p>
+<p class="p1"><span class="Apple-converted-space">          </span>const v = Math.floor(Math.random()*40);</p>
+<p class="p1"><span class="Apple-converted-space">          </span>ctx.fillStyle = `rgba(${200+v},${180+v},${130+v*.5|0},0.4)`;</p>
+<p class="p1"><span class="Apple-converted-space">          </span>ctx.fillRect(Math.random()*s, Math.random()*s, 1.5, 1.5);</p>
+<p class="p1"><span class="Apple-converted-space">        </span>}</p>
+<p class="p1"><span class="Apple-converted-space">      </span>},</p>
+<p class="p1"><span class="Apple-converted-space">    </span>},</p>
+<p class="p1"><span class="Apple-converted-space">  </span>},</p>
+<p class="p1"><span class="Apple-converted-space">  </span>wall: {</p>
+<p class="p1"><span class="Apple-converted-space">    </span>friction: 0.5, restitution: 0.3, rollingResist: 0.01,</p>
+<p class="p1"><span class="Apple-converted-space">    </span>appearance: { color: 0x0088ff, roughness: 0.3, metalness: 0.6, transparent: true, opacity: 0.45 },</p>
+<p class="p1"><span class="Apple-converted-space">  </span>},</p>
+<p class="p1">};</p>
+<p class="p2"><br></p>
+<p class="p1">// ── THREE.JS SETUP ────────────────────────────────────────────────────────────</p>
+<p class="p1">const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('c'), antialias: true });</p>
+<p class="p1">renderer.setPixelRatio(devicePixelRatio);</p>
+<p class="p1">renderer.setSize(innerWidth, innerHeight);</p>
+<p class="p1">renderer.shadowMap.enabled = true;</p>
+<p class="p1">renderer.shadowMap.type = THREE.PCFSoftShadowMap;</p>
+<p class="p2"><br></p>
+<p class="p1">const scene = new THREE.Scene();</p>
+<p class="p1">scene.background = new THREE.Color(0x0a0a1a);</p>
+<p class="p1">scene.fog = new THREE.Fog(0x0a0a1a, 80, 200);</p>
+<p class="p2"><br></p>
+<p class="p1">const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 500);</p>
+<p class="p1">camera.position.set(0, 20, 32);</p>
+<p class="p2"><br></p>
+<p class="p1">window.addEventListener('resize', () =&gt; {</p>
+<p class="p1"><span class="Apple-converted-space">  </span>renderer.setSize(innerWidth, innerHeight);</p>
+<p class="p1"><span class="Apple-converted-space">  </span>camera.aspect = innerWidth / innerHeight;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>camera.updateProjectionMatrix();</p>
+<p class="p1">});</p>
+<p class="p2"><br></p>
+<p class="p1">scene.add(new THREE.AmbientLight(0x334466, 1.5));</p>
+<p class="p1">const sun = new THREE.DirectionalLight(0xffffff, 2.5);</p>
+<p class="p1">sun.position.set(25, 50, 25);</p>
+<p class="p1">sun.castShadow = true;</p>
+<p class="p1">sun.shadow.mapSize.set(2048, 2048);</p>
+<p class="p1">Object.assign(sun.shadow.camera, { near:1, far:400, left:-80, right:80, top:80, bottom:-80 });</p>
+<p class="p1">scene.add(sun);</p>
+<p class="p1">const fill = new THREE.PointLight(0x0088ff, 1.5, 80);</p>
+<p class="p1">fill.position.set(-20, 15, -20);</p>
+<p class="p1">scene.add(fill);</p>
+<p class="p2"><br></p>
+<p class="p1">// ── STAGE HELPERS ─────────────────────────────────────────────────────────────</p>
+<p class="p1">const stageGroup = new THREE.Group();</p>
+<p class="p1">scene.add(stageGroup);</p>
+<p class="p2"><br></p>
+<p class="p1">function buildThreeMat(matName, tileSize = 1) {</p>
+<p class="p1"><span class="Apple-converted-space">  </span>const { appearance: a } = MATERIALS[matName] || MATERIALS.default;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>const p = { color: a.color ?? 0xffffff, roughness: a.roughness ?? 0.8, metalness: a.metalness ?? 0 };</p>
+<p class="p1"><span class="Apple-converted-space">  </span>if (a.transparent) { p.transparent = true; p.opacity = a.opacity ?? 1; }</p>
+<p class="p1"><span class="Apple-converted-space">  </span>if (a.texture) {</p>
+<p class="p1"><span class="Apple-converted-space">    </span>const canvas = Object.assign(document.createElement('canvas'), { width: 512, height: 512 });</p>
+<p class="p1"><span class="Apple-converted-space">    </span>a.texture(canvas.getContext('2d'), 512);</p>
+<p class="p1"><span class="Apple-converted-space">    </span>const tex = new THREE.CanvasTexture(canvas);</p>
+<p class="p1"><span class="Apple-converted-space">    </span>tex.wrapS = tex.wrapT = THREE.RepeatWrapping;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>p.map = tex;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>}</p>
+<p class="p1"><span class="Apple-converted-space">  </span>const mat = new THREE.MeshStandardMaterial(p);</p>
+<p class="p1"><span class="Apple-converted-space">  </span>if (p.map) mat.userData._tex = p.map;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>mat.userData._tileSize = tileSize;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>return mat;</p>
+<p class="p1">}</p>
+<p class="p2"><br></p>
+<p class="p1">function addToStage(geo, matName, { position = new THREE.Vector3(), rotation = new THREE.Euler(), tileSize = 1, castShadow = true, collidable = true } = {}) {</p>
+<p class="p1"><span class="Apple-converted-space">  </span>const mat<span class="Apple-converted-space">  </span>= buildThreeMat(matName, tileSize);</p>
+<p class="p1"><span class="Apple-converted-space">  </span>const mesh = new THREE.Mesh(geo, mat);</p>
+<p class="p1"><span class="Apple-converted-space">  </span>mesh.position.copy(position);</p>
+<p class="p1"><span class="Apple-converted-space">  </span>mesh.rotation.copy(rotation);</p>
+<p class="p1"><span class="Apple-converted-space">  </span>mesh.castShadow = castShadow;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>mesh.receiveShadow = true;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>mesh.userData.physicsMaterial = matName;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>mesh.userData.collidable = collidable;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>if (mat.userData._tex) {</p>
+<p class="p1"><span class="Apple-converted-space">    </span>geo.computeBoundingBox();</p>
+<p class="p1"><span class="Apple-converted-space">    </span>const { min, max } = geo.boundingBox;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>mat.userData._tex.repeat.set((max.x - min.x) / tileSize / 8, (max.z - min.z) / tileSize / 8);</p>
+<p class="p1"><span class="Apple-converted-space">  </span>}</p>
+<p class="p1"><span class="Apple-converted-space">  </span>stageGroup.add(mesh);</p>
+<p class="p1"><span class="Apple-converted-space">  </span>return mesh;</p>
+<p class="p1">}</p>
+<p class="p2"><br></p>
+<p class="p1">// ── BUILD STAGE ───────────────────────────────────────────────────────────────</p>
+<p class="p1">const S = P.stageSize;</p>
+<p class="p1">const V = (x,y,z) =&gt; new THREE.Vector3(x,y,z);</p>
+<p class="p1">const E = (x,y,z) =&gt; new THREE.Euler(x,y,z);</p>
+<p class="p2"><br></p>
+<p class="p1">// Floor</p>
+<p class="p1">addToStage(</p>
+<p class="p1"><span class="Apple-converted-space">  </span>new THREE.PlaneGeometry(S*2, S*2).applyMatrix4(new THREE.Matrix4().makeRotationX(-Math.PI/2)),</p>
+<p class="p1"><span class="Apple-converted-space">  </span>'default'</p>
+<p class="p1">);</p>
+<p class="p2"><br></p>
+<p class="p1">// ── Sand pit (sunken plane, bottom-left quadrant)</p>
+<p class="p1">addToStage(</p>
+<p class="p1"><span class="Apple-converted-space">  </span>new THREE.PlaneGeometry(24, 24).applyMatrix4(new THREE.Matrix4().makeRotationX(-Math.PI/2)),</p>
+<p class="p1"><span class="Apple-converted-space">  </span>'sand', { position: V(-30, -0.05, -30) }</p>
+<p class="p1">);</p>
+<p class="p2"><br></p>
+<p class="p1">// ── Ice strip (diagonal band across center)</p>
+<p class="p1">addToStage(</p>
+<p class="p1"><span class="Apple-converted-space">  </span>new THREE.PlaneGeometry(12, 60).applyMatrix4(new THREE.Matrix4().makeRotationX(-Math.PI/2)),</p>
+<p class="p1"><span class="Apple-converted-space">  </span>'ice', { position: V(0, 0.01, 0), rotation: E(0, Math.PI/6, 0) }</p>
+<p class="p1">);</p>
+<p class="p2"><br></p>
+<p class="p1">// ── Wood ramp (bottom-right, tilted up)</p>
+<p class="p1">addToStage(new THREE.BoxGeometry(16, 0.5, 20), 'wood', {</p>
+<p class="p1"><span class="Apple-converted-space">  </span>position: V(28, 2.5, 28),</p>
+<p class="p1"><span class="Apple-converted-space">  </span>rotation: E(-0.25, 0, 0),</p>
+<p class="p1">});</p>
+<p class="p2"><br></p>
+<p class="p1">// ── Concrete ramp (top-left, tilted sideways)</p>
+<p class="p1">addToStage(new THREE.BoxGeometry(20, 0.5, 14), 'concrete', {</p>
+<p class="p1"><span class="Apple-converted-space">  </span>position: V(-28, 2, 20),</p>
+<p class="p1"><span class="Apple-converted-space">  </span>rotation: E(0, 0, 0.2),</p>
+<p class="p1">});</p>
+<p class="p2"><br></p>
+<p class="p1">// ── Metal raised platform (top-right)</p>
+<p class="p1">addToStage(new THREE.BoxGeometry(18, 1, 18), 'metal', {</p>
+<p class="p1"><span class="Apple-converted-space">  </span>position: V(28, 1, -28),</p>
+<p class="p1">});</p>
+<p class="p1">// step up to platform</p>
+<p class="p1">addToStage(new THREE.BoxGeometry(6, 1, 18), 'metal', {</p>
+<p class="p1"><span class="Apple-converted-space">  </span>position: V(16, 0.5, -28),</p>
+<p class="p1">});</p>
+<p class="p2"><br></p>
+<p class="p1">// ── Rubber bumper cylinders (scattered)</p>
+<p class="p1">[[-10, 0,<span class="Apple-converted-space">  </span>10], [10, 0, -10], [20, 0, 5], [-5, 0, -20], [0, 0, 30]].forEach(([x,,z]) =&gt;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>addToStage(new THREE.CylinderGeometry(1.5, 1.5, 2, 16), 'rubber', {</p>
+<p class="p1"><span class="Apple-converted-space">    </span>position: V(x, 1, z),</p>
+<p class="p1"><span class="Apple-converted-space">  </span>})</p>
+<p class="p1">);</p>
+<p class="p2"><br></p>
+<p class="p1">// ── Concrete pillars (center cluster)</p>
+<p class="p1">[[-6,0,-6],[6,0,-6],[6,0,6],[-6,0,6]].forEach(([x,,z]) =&gt;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>addToStage(new THREE.CylinderGeometry(1, 1, 4, 12), 'concrete', {</p>
+<p class="p1"><span class="Apple-converted-space">    </span>position: V(x, 2, z),</p>
+<p class="p1"><span class="Apple-converted-space">  </span>})</p>
+<p class="p1">);</p>
+<p class="p2"><br></p>
+<p class="p1">// ── Wood box obstacles</p>
+<p class="p1">[[-20,0,-10],[15,0,15],[-15,0,30],[35,0,10]].forEach(([x,,z]) =&gt;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>addToStage(new THREE.BoxGeometry(4, 4, 4), 'wood', {</p>
+<p class="p1"><span class="Apple-converted-space">    </span>position: V(x, 2, z),</p>
+<p class="p1"><span class="Apple-converted-space">  </span>})</p>
+<p class="p1">);</p>
+<p class="p2"><br></p>
+<p class="p1">// ── Metal half-pipe (torus segment lying flat)</p>
+<p class="p1">addToStage(new THREE.TorusGeometry(8, 1.5, 8, 24, Math.PI), 'metal', {</p>
+<p class="p1"><span class="Apple-converted-space">  </span>position: V(-30, 1.5, 15),</p>
+<p class="p1"><span class="Apple-converted-space">  </span>rotation: E(Math.PI/2, 0, 0),</p>
+<p class="p1">});</p>
+<p class="p2"><br></p>
+<p class="p1">// ── Cone ramps</p>
+<p class="p1">[[-35, 0, -20], [35, 0, -15]].forEach(([x,,z]) =&gt;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>addToStage(new THREE.ConeGeometry(5, 3, 16), 'concrete', {</p>
+<p class="p1"><span class="Apple-converted-space">    </span>position: V(x, 1.5, z),</p>
+<p class="p1"><span class="Apple-converted-space">  </span>})</p>
+<p class="p1">);</p>
+<p class="p2"><br></p>
+<p class="p1">// ── BALL ──────────────────────────────────────────────────────────────────────</p>
+<p class="p1">const ballMesh = new THREE.Mesh(</p>
+<p class="p1"><span class="Apple-converted-space">  </span>new THREE.SphereGeometry(P.radius, 32, 32),</p>
+<p class="p1"><span class="Apple-converted-space">  </span>new THREE.MeshStandardMaterial({ map: new THREE.TextureLoader().load('shaq.png'), roughness: 0.6, metalness: 0.1 })</p>
+<p class="p1">);</p>
+<p class="p1">ballMesh.castShadow = ballMesh.receiveShadow = true;</p>
+<p class="p1">scene.add(ballMesh);</p>
+<p class="p2"><br></p>
+<p class="p1">// ── PHYSICS STATE ─────────────────────────────────────────────────────────────</p>
+<p class="p1">let pos<span class="Apple-converted-space">    </span>= new THREE.Vector3(0, P.radius, 0);</p>
+<p class="p1">let vel<span class="Apple-converted-space">    </span>= new THREE.Vector3();</p>
+<p class="p1">let angVel = new THREE.Vector3();</p>
+<p class="p1">let orient = new THREE.Quaternion();</p>
+<p class="p1">let onFloor = false;</p>
+<p class="p1">let tiltX = 0, tiltZ = 0;</p>
+<p class="p2"><br></p>
+<p class="p1">// ── CAMERA ORBIT STATE ────────────────────────────────────────────────────────</p>
+<p class="p1">let camAzimuth = 0;</p>
+<p class="p1">let camPolar <span class="Apple-converted-space">  </span>= 0.85;</p>
+<p class="p1">const CAM_DIST <span class="Apple-converted-space">      </span>= 22;</p>
+<p class="p1">const CAM_AZ_SPEED <span class="Apple-converted-space">  </span>= 1.8;</p>
+<p class="p1">const CAM_POL_DEFAULT = 0.85;</p>
+<p class="p1">const CAM_POL_HIGH<span class="Apple-converted-space">    </span>= 0.15;</p>
+<p class="p1">const CAM_POL_LOW <span class="Apple-converted-space">    </span>= 1.35;</p>
+<p class="p2"><br></p>
+<p class="p1">// ── INPUT ─────────────────────────────────────────────────────────────────────</p>
+<p class="p1">const keys = {};</p>
+<p class="p1">window.addEventListener('keydown', e =&gt; {</p>
+<p class="p1"><span class="Apple-converted-space">  </span>keys[e.code] = true;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>if (e.code === 'Space') e.preventDefault();</p>
+<p class="p1"><span class="Apple-converted-space">  </span>if (e.code === 'KeyR') reset();</p>
+<p class="p1">});</p>
+<p class="p1">window.addEventListener('keyup', e =&gt; { keys[e.code] = false; });</p>
+<p class="p2"><br></p>
+<p class="p1">function reset() {</p>
+<p class="p1"><span class="Apple-converted-space">  </span>pos.set(0, P.radius, 0); vel.set(0,0,0); angVel.set(0,0,0);</p>
+<p class="p1"><span class="Apple-converted-space">  </span>orient.identity(); tiltX = tiltZ = 0;</p>
+<p class="p1">}</p>
+<p class="p2"><br></p>
+<p class="p1">// ── COLLISION ─────────────────────────────────────────────────────────────────</p>
+<p class="p1">const _A = new THREE.Vector3(), _B = new THREE.Vector3(), _C = new THREE.Vector3();</p>
+<p class="p1">const _ab = new THREE.Vector3(), _ac = new THREE.Vector3();</p>
+<p class="p2"><br></p>
+<p class="p1">function closestPointOnTri(P, A, B, C, out) {</p>
+<p class="p1"><span class="Apple-converted-space">  </span>_ab.copy(B).sub(A); _ac.copy(C).sub(A);</p>
+<p class="p1"><span class="Apple-converted-space">  </span>const ap = new THREE.Vector3().copy(P).sub(A);</p>
+<p class="p1"><span class="Apple-converted-space">  </span>const d1 = _ab.dot(ap), d2 = _ac.dot(ap);</p>
+<p class="p1"><span class="Apple-converted-space">  </span>if (d1 &lt;= 0 &amp;&amp; d2 &lt;= 0) { out.copy(A); return; }</p>
+<p class="p1"><span class="Apple-converted-space">  </span>const bp = new THREE.Vector3().copy(P).sub(B);</p>
+<p class="p1"><span class="Apple-converted-space">  </span>const d3 = _ab.dot(bp), d4 = _ac.dot(bp);</p>
+<p class="p1"><span class="Apple-converted-space">  </span>if (d3 &gt;= 0 &amp;&amp; d4 &lt;= d3) { out.copy(B); return; }</p>
+<p class="p1"><span class="Apple-converted-space">  </span>const cp = new THREE.Vector3().copy(P).sub(C);</p>
+<p class="p1"><span class="Apple-converted-space">  </span>const d5 = _ab.dot(cp), d6 = _ac.dot(cp);</p>
+<p class="p1"><span class="Apple-converted-space">  </span>if (d6 &gt;= 0 &amp;&amp; d5 &lt;= d6) { out.copy(C); return; }</p>
+<p class="p1"><span class="Apple-converted-space">  </span>const vc = d1*d4 - d3*d2;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>if (vc &lt;= 0 &amp;&amp; d1 &gt;= 0 &amp;&amp; d3 &lt;= 0) { out.copy(A).addScaledVector(_ab, d1/(d1-d3)); return; }</p>
+<p class="p1"><span class="Apple-converted-space">  </span>const vb = d5*d2 - d1*d6;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>if (vb &lt;= 0 &amp;&amp; d2 &gt;= 0 &amp;&amp; d6 &lt;= 0) { out.copy(A).addScaledVector(_ac, d2/(d2-d6)); return; }</p>
+<p class="p1"><span class="Apple-converted-space">  </span>const va = d3*d6 - d5*d4;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>if (va &lt;= 0 &amp;&amp; (d4-d3) &gt;= 0 &amp;&amp; (d5-d6) &gt;= 0) {</p>
+<p class="p1"><span class="Apple-converted-space">    </span>out.copy(B).addScaledVector(new THREE.Vector3().copy(C).sub(B), (d4-d3)/((d4-d3)+(d5-d6))); return;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>}</p>
+<p class="p1"><span class="Apple-converted-space">  </span>const f = 1/(va+vb+vc);</p>
+<p class="p1"><span class="Apple-converted-space">  </span>out.copy(A).addScaledVector(_ab, vb*f).addScaledVector(_ac, vc*f);</p>
+<p class="p1">}</p>
+<p class="p2"><br></p>
+<p class="p1">function sphereMeshCollision(center, radius, mesh) {</p>
+<p class="p1"><span class="Apple-converted-space">  </span>const { attributes: { position: pos }, index } = mesh.geometry;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>const mw = mesh.matrixWorld;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>const triCount = index ? index.count/3 : pos.count/3;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>const cp = new THREE.Vector3();</p>
+<p class="p1"><span class="Apple-converted-space">  </span>let bestDepth = 0, bestNormal = null;</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">  </span>for (let i = 0; i &lt; triCount; i++) {</p>
+<p class="p1"><span class="Apple-converted-space">    </span>const i0 = index ? index.getX(i*3) <span class="Apple-converted-space">  </span>: i*3;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>const i1 = index ? index.getX(i*3+1) : i*3+1;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>const i2 = index ? index.getX(i*3+2) : i*3+2;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>_A.fromBufferAttribute(pos, i0).applyMatrix4(mw);</p>
+<p class="p1"><span class="Apple-converted-space">    </span>_B.fromBufferAttribute(pos, i1).applyMatrix4(mw);</p>
+<p class="p1"><span class="Apple-converted-space">    </span>_C.fromBufferAttribute(pos, i2).applyMatrix4(mw);</p>
+<p class="p1"><span class="Apple-converted-space">    </span>closestPointOnTri(center, _A, _B, _C, cp);</p>
+<p class="p1"><span class="Apple-converted-space">    </span>const diff = new THREE.Vector3().copy(center).sub(cp);</p>
+<p class="p1"><span class="Apple-converted-space">    </span>const dist = diff.length();</p>
+<p class="p1"><span class="Apple-converted-space">    </span>if (dist &gt; 1e-10 &amp;&amp; dist &lt; radius &amp;&amp; radius-dist &gt; bestDepth) {</p>
+<p class="p1"><span class="Apple-converted-space">      </span>bestDepth = radius - dist;</p>
+<p class="p1"><span class="Apple-converted-space">      </span>bestNormal = diff.divideScalar(dist);</p>
+<p class="p1"><span class="Apple-converted-space">    </span>}</p>
+<p class="p1"><span class="Apple-converted-space">  </span>}</p>
+<p class="p1"><span class="Apple-converted-space">  </span>return bestNormal ? { normal: bestNormal, depth: bestDepth } : null;</p>
+<p class="p1">}</p>
+<p class="p2"><br></p>
+<p class="p1">// ── MAIN LOOP ─────────────────────────────────────────────────────────────────</p>
+<p class="p1">const DEG = Math.PI / 180;</p>
+<p class="p1">let prevTime = performance.now();</p>
+<p class="p2"><br></p>
+<p class="p1">function animate() {</p>
+<p class="p1"><span class="Apple-converted-space">  </span>requestAnimationFrame(animate);</p>
+<p class="p1"><span class="Apple-converted-space">  </span>const now = performance.now();</p>
+<p class="p1"><span class="Apple-converted-space">  </span>const dt<span class="Apple-converted-space">  </span>= Math.min((now - prevTime) / 1000, 0.05);</p>
+<p class="p1"><span class="Apple-converted-space">  </span>prevTime<span class="Apple-converted-space">  </span>= now;</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">  </span>// Tilt — WASD in camera-relative space</p>
+<p class="p1"><span class="Apple-converted-space">  </span>const ts = P.tiltSpeed * DEG * dt, tr = P.tiltReturn * DEG * dt, tm = P.tiltMax * DEG;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>const pX = keys['KeyW'] || keys['KeyS'];</p>
+<p class="p1"><span class="Apple-converted-space">  </span>const pZ = keys['KeyA'] || keys['KeyD'];</p>
+<p class="p1"><span class="Apple-converted-space">  </span>if (keys['KeyW']) tiltX = Math.max(tiltX - ts, -tm);</p>
+<p class="p1"><span class="Apple-converted-space">  </span>if (keys['KeyS']) tiltX = Math.min(tiltX + ts,<span class="Apple-converted-space">  </span>tm);</p>
+<p class="p1"><span class="Apple-converted-space">  </span>if (keys['KeyA']) tiltZ = Math.min(tiltZ + ts,<span class="Apple-converted-space">  </span>tm);</p>
+<p class="p1"><span class="Apple-converted-space">  </span>if (keys['KeyD']) tiltZ = Math.max(tiltZ - ts, -tm);</p>
+<p class="p1"><span class="Apple-converted-space">  </span>if (!pX) tiltX = Math.abs(tiltX) &lt;= tr ? 0 : tiltX - Math.sign(tiltX) * tr;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>if (!pZ) tiltZ = Math.abs(tiltZ) &lt;= tr ? 0 : tiltZ - Math.sign(tiltZ) * tr;</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">  </span>// Rotate tilt vector by camera azimuth so W always tilts away from camera</p>
+<p class="p1"><span class="Apple-converted-space">  </span>const ca = Math.cos(camAzimuth), sa = Math.sin(camAzimuth);</p>
+<p class="p1"><span class="Apple-converted-space">  </span>const worldTiltX =<span class="Apple-converted-space">  </span>tiltX * ca + tiltZ * sa;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>const worldTiltZ = -tiltX * sa + tiltZ * ca;</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">  </span>// Camera orbit — arrow keys; up/down snap to preset polar angles</p>
+<p class="p1"><span class="Apple-converted-space">  </span>if (keys['ArrowLeft'])<span class="Apple-converted-space">  </span>camAzimuth += CAM_AZ_SPEED * dt;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>if (keys['ArrowRight']) camAzimuth -= CAM_AZ_SPEED * dt;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>const targetPolar = keys['ArrowDown'] ? CAM_POL_HIGH : keys['ArrowUp'] ? CAM_POL_LOW : CAM_POL_DEFAULT;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>camPolar += (targetPolar - camPolar) * Math.min(1, 12 * dt);</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">  </span>// Stage pivot around ball contact point</p>
+<p class="p1"><span class="Apple-converted-space">  </span>const stageQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(worldTiltX, 0, worldTiltZ, 'XZY'));</p>
+<p class="p1"><span class="Apple-converted-space">  </span>const pivot = new THREE.Vector3(pos.x, 0, pos.z);</p>
+<p class="p1"><span class="Apple-converted-space">  </span>stageGroup.position.copy(pivot).sub(pivot.clone().applyQuaternion(stageQuat));</p>
+<p class="p1"><span class="Apple-converted-space">  </span>stageGroup.setRotationFromQuaternion(stageQuat);</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">  </span>// Physics</p>
+<p class="p1"><span class="Apple-converted-space">  </span>const grav = new THREE.Vector3(0, -P.gravity, 0);</p>
+<p class="p1"><span class="Apple-converted-space">  </span>vel.addScaledVector(grav, dt);</p>
+<p class="p1"><span class="Apple-converted-space">  </span>pos.addScaledVector(vel, dt);</p>
+<p class="p1"><span class="Apple-converted-space">  </span>if (keys['Space'] &amp;&amp; onFloor) { vel.y += 4.8; onFloor = false; }</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">  </span>// Collision</p>
+<p class="p1"><span class="Apple-converted-space">  </span>stageGroup.updateMatrixWorld(true);</p>
+<p class="p1"><span class="Apple-converted-space">  </span>onFloor = false;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>stageGroup.traverse(child =&gt; {</p>
+<p class="p1"><span class="Apple-converted-space">    </span>if (!child.isMesh || child.userData.collidable === false) return;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>const hit = sphereMeshCollision(pos, P.radius, child);</p>
+<p class="p1"><span class="Apple-converted-space">    </span>if (!hit) return;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>const { normal: n, depth } = hit;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>const phys = MATERIALS[child.userData.physicsMaterial] || MATERIALS.default;</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>pos.addScaledVector(n, depth);</p>
+<p class="p1"><span class="Apple-converted-space">    </span>const vn = vel.dot(n);</p>
+<p class="p1"><span class="Apple-converted-space">    </span>if (vn &lt; 0) {</p>
+<p class="p1"><span class="Apple-converted-space">      </span>vel.addScaledVector(n, -vn * (1 + phys.restitution));</p>
+<p class="p1"><span class="Apple-converted-space">      </span>if (vel.dot(n) &lt; 0.4) vel.addScaledVector(n, -vel.dot(n));</p>
+<p class="p1"><span class="Apple-converted-space">    </span>}</p>
+<p class="p1"><span class="Apple-converted-space">    </span>onFloor = true;</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>// Friction</p>
+<p class="p1"><span class="Apple-converted-space">    </span>const r = n.clone().multiplyScalar(-P.radius);</p>
+<p class="p1"><span class="Apple-converted-space">    </span>const vSlip = vel.clone().add(new THREE.Vector3().crossVectors(angVel, r))</p>
+<p class="p1"><span class="Apple-converted-space">      </span>.addScaledVector(n, -vel.clone().add(new THREE.Vector3().crossVectors(angVel, r)).dot(n));</p>
+<p class="p1"><span class="Apple-converted-space">    </span>const slipSpeed = vSlip.length();</p>
+<p class="p1"><span class="Apple-converted-space">    </span>if (slipSpeed &gt; 1e-5) {</p>
+<p class="p1"><span class="Apple-converted-space">      </span>const sd <span class="Apple-converted-space">  </span>= vSlip.clone().divideScalar(slipSpeed);</p>
+<p class="p1"><span class="Apple-converted-space">      </span>const Fn <span class="Apple-converted-space">  </span>= P.mass * Math.abs(grav.dot(n));</p>
+<p class="p1"><span class="Apple-converted-space">      </span>const mEff = 1 / (1/P.mass + new THREE.Vector3().crossVectors(r, sd).lengthSq() / I_BALL);</p>
+<p class="p1"><span class="Apple-converted-space">      </span>const imp<span class="Apple-converted-space">  </span>= sd.multiplyScalar(-Math.min(slipSpeed * mEff, phys.friction * Fn * dt));</p>
+<p class="p1"><span class="Apple-converted-space">      </span>vel.addScaledVector(imp, 1/P.mass);</p>
+<p class="p1"><span class="Apple-converted-space">      </span>angVel.addScaledVector(new THREE.Vector3().crossVectors(r, imp), 1/I_BALL);</p>
+<p class="p1"><span class="Apple-converted-space">    </span>}</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>// Rolling resistance</p>
+<p class="p1"><span class="Apple-converted-space">    </span>const wSpeed = angVel.length();</p>
+<p class="p1"><span class="Apple-converted-space">    </span>if (wSpeed &gt; 1e-6) {</p>
+<p class="p1"><span class="Apple-converted-space">      </span>const dw = Math.min(phys.rollingResist * P.mass * Math.abs(grav.dot(n)) * P.radius * dt / I_BALL, wSpeed);</p>
+<p class="p1"><span class="Apple-converted-space">      </span>angVel.multiplyScalar(1 - dw / wSpeed);</p>
+<p class="p1"><span class="Apple-converted-space">    </span>}</p>
+<p class="p1"><span class="Apple-converted-space">  </span>});</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">  </span>if (pos.y &lt; -15) { reset(); return; }</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">  </span>// Orientation</p>
+<p class="p1"><span class="Apple-converted-space">  </span>const wLen = angVel.length();</p>
+<p class="p1"><span class="Apple-converted-space">  </span>if (wLen &gt; 1e-10) {</p>
+<p class="p1"><span class="Apple-converted-space">    </span>orient.premultiply(new THREE.Quaternion().setFromAxisAngle(angVel.clone().divideScalar(wLen), wLen * dt));</p>
+<p class="p1"><span class="Apple-converted-space">    </span>orient.normalize();</p>
+<p class="p1"><span class="Apple-converted-space">  </span>}</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">  </span>// Update meshes &amp; camera</p>
+<p class="p1"><span class="Apple-converted-space">  </span>ballMesh.position.copy(pos);</p>
+<p class="p1"><span class="Apple-converted-space">  </span>ballMesh.setRotationFromQuaternion(orient);</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">  </span>// Spherical orbit camera around ball</p>
+<p class="p1"><span class="Apple-converted-space">  </span>const camX = pos.x + CAM_DIST * Math.sin(camPolar) * Math.sin(camAzimuth);</p>
+<p class="p1"><span class="Apple-converted-space">  </span>const camY = pos.y + CAM_DIST * Math.cos(camPolar);</p>
+<p class="p1"><span class="Apple-converted-space">  </span>const camZ = pos.z + CAM_DIST * Math.sin(camPolar) * Math.cos(camAzimuth);</p>
+<p class="p1"><span class="Apple-converted-space">  </span>camera.position.lerp(new THREE.Vector3(camX, camY, camZ), 0.08);</p>
+<p class="p1"><span class="Apple-converted-space">  </span>camera.lookAt(pos);</p>
+<p class="p1"><span class="Apple-converted-space">  </span>renderer.render(scene, camera);</p>
+<p class="p1">}</p>
+<p class="p2"><br></p>
+<p class="p1">animate();</p>
+<p class="p1">&lt;/script&gt;</p>
+<p class="p1">&lt;/body&gt;</p>
+<p class="p1">&lt;/html&gt;</p>
+</body>
+</html>

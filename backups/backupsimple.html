@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>ShaqBall 3D</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #000; overflow: hidden; font-family: 'Courier New', monospace; }
+  canvas { display: block; }
+  #ui {
+    position: fixed; top: 16px; left: 16px;
+    color: #fff; font-size: 13px; line-height: 1.9;
+    text-shadow: 0 0 8px #0ff;
+    pointer-events: none;
+  }
+  #ui b { color: #0ff; }
+  #title {
+    position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
+    font-size: 28px; font-weight: 900; color: #fff;
+    text-shadow: 0 0 20px #0ff, 0 0 40px #0ff;
+    letter-spacing: 4px; pointer-events: none;
+  }
+  #controls {
+    position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
+    color: rgba(255,255,255,0.5); font-size: 12px; text-align: center;
+    pointer-events: none;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="title">SHAQBALL 3D</div>
+<div id="ui">
+  <b>PHYSICS</b><br>
+  Friction μ: <b id="vFriction"></b><br>
+  Restitution: <b id="vRestitution"></b><br>
+  Rolling Resist Crr: <b id="vRolling"></b><br>
+  <br>
+  <b>BALL</b><br>
+  Mass: <b id="vMass"></b> kg<br>
+</div>
+<div id="controls">← → ↑ ↓ &nbsp;tilt stage &nbsp;|&nbsp; SPACE jump &nbsp;|&nbsp; R reset</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+// ════════════════════════════════════════════════════════════════════
+//  TUNABLE PARAMETERS
+// ════════════════════════════════════════════════════════════════════
+
+const P = {
+  // Surface properties
+  friction:         0.6,    // Coulomb friction coefficient μ
+  restitution:      0.4,    // Coefficient of restitution (bounce)
+  rollingResist:    0.003,  // Rolling resistance coefficient Crr
+
+  // Ball properties
+  mass:             1.0,    // kg
+  radius:           1.0,    // m
+
+  // Stage control
+  tiltSpeed:        80,     // degrees/sec
+  tiltMax:          15,     // degrees max tilt
+  tiltReturn:       120,    // degrees/sec return to level
+
+  // World
+  gravity:          25,     // m/s²
+  stageSize:        30,     // half-extent of stage
+};
+
+// Moment of inertia for a solid sphere: I = 2/5 * m * r²
+const I_BALL = (2 / 5) * P.mass * P.radius * P.radius;
+
+// ════════════════════════════════════════════════════════════════════
+//  THREE.JS SETUP
+// ════════════════════════════════════════════════════════════════════
+
+const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('c'), antialias: true });
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0a0a1a);
+scene.fog = new THREE.Fog(0x0a0a1a, 50, 120);
+
+const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 500);
+camera.position.set(0, 20, 32);
+camera.lookAt(0, 0, 0);
+
+window.addEventListener('resize', () => {
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+});
+
+// Lighting
+scene.add(new THREE.AmbientLight(0x334466, 1.5));
+
+const sun = new THREE.DirectionalLight(0xffffff, 2.5);
+sun.position.set(25, 50, 25);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.camera.near = 1;
+sun.shadow.camera.far  = 200;
+sun.shadow.camera.left = sun.shadow.camera.bottom = -60;
+sun.shadow.camera.right = sun.shadow.camera.top   =  60;
+scene.add(sun);
+
+const fill = new THREE.PointLight(0x0088ff, 1.5, 80);
+fill.position.set(-20, 15, -20);
+scene.add(fill);
+
+// ════════════════════════════════════════════════════════════════════
+//  STAGE
+// ════════════════════════════════════════════════════════════════════
+
+const stageGroup = new THREE.Group();
+scene.add(stageGroup);
+
+// Checkerboard floor texture
+const fc = document.createElement('canvas');
+fc.width = fc.height = 512;
+const fctx = fc.getContext('2d');
+const SQ = 64;
+for (let i = 0; i < 512 / SQ; i++) {
+  for (let j = 0; j < 512 / SQ; j++) {
+    fctx.fillStyle = (i + j) % 2 === 0 ? '#1a1a2e' : '#16213e';
+    fctx.fillRect(i * SQ, j * SQ, SQ, SQ);
+    fctx.strokeStyle = '#0ff2';
+    fctx.lineWidth = 1;
+    fctx.strokeRect(i * SQ + 0.5, j * SQ + 0.5, SQ - 1, SQ - 1);
+  }
+}
+const floorTex = new THREE.CanvasTexture(fc);
+floorTex.wrapS = floorTex.wrapT = THREE.RepeatWrapping;
+floorTex.repeat.set(3, 3);
+
+const floorMesh = new THREE.Mesh(
+  new THREE.PlaneGeometry(P.stageSize * 2, P.stageSize * 2),
+  new THREE.MeshStandardMaterial({ map: floorTex, roughness: 0.8, metalness: 0.1 })
+);
+floorMesh.rotation.x = -Math.PI / 2;
+floorMesh.receiveShadow = true;
+stageGroup.add(floorMesh);
+
+// Edge walls
+const wallMat = new THREE.MeshStandardMaterial({
+  color: 0x0088ff, roughness: 0.3, metalness: 0.6, transparent: true, opacity: 0.45
+});
+const wallThickness = 0.3;
+// Z-axis walls (full width)
+[-P.stageSize, P.stageSize].forEach(z => {
+  const w = new THREE.Mesh(new THREE.BoxGeometry(P.stageSize * 2, 0.6, wallThickness), wallMat);
+  w.position.set(0, 0.3, z);
+  w.castShadow = true; w.receiveShadow = true;
+  stageGroup.add(w);
+});
+// X-axis walls (inset by wall thickness so corners don't overlap)
+[-P.stageSize, P.stageSize].forEach(x => {
+  const w = new THREE.Mesh(new THREE.BoxGeometry(wallThickness, 0.6, P.stageSize * 2 - wallThickness * 2), wallMat);
+  w.position.set(x, 0.3, 0);
+  w.castShadow = true; w.receiveShadow = true;
+  stageGroup.add(w);
+});
+
+// ════════════════════════════════════════════════════════════════════
+//  BALL
+// ════════════════════════════════════════════════════════════════════
+
+const shaqTex = new THREE.TextureLoader().load('shaq.png');
+const ballMesh = new THREE.Mesh(
+  new THREE.SphereGeometry(P.radius, 32, 32),
+  new THREE.MeshStandardMaterial({ map: shaqTex, roughness: 0.6, metalness: 0.1 })
+);
+ballMesh.castShadow = true;
+ballMesh.receiveShadow = true;
+scene.add(ballMesh);
+
+// ════════════════════════════════════════════════════════════════════
+//  PHYSICS STATE  (all world-space)
+// ════════════════════════════════════════════════════════════════════
+
+let pos    = new THREE.Vector3(0, P.radius, 0);
+let vel    = new THREE.Vector3(0, 0, 0);
+let angVel = new THREE.Vector3(0, 0, 0);
+let orient = new THREE.Quaternion();
+let onFloor = false;
+
+// Stage tilt (radians)
+let tiltX = 0;
+let tiltZ = 0;
+
+// ════════════════════════════════════════════════════════════════════
+//  INPUT
+// ════════════════════════════════════════════════════════════════════
+
+const keys = {};
+window.addEventListener('keydown', e => {
+  keys[e.code] = true;
+  if (e.code === 'Space') e.preventDefault();
+  if (e.code === 'KeyR')  reset();
+});
+window.addEventListener('keyup', e => { keys[e.code] = false; });
+
+function reset() {
+  pos.set(0, P.radius, 0);
+  vel.set(0, 0, 0);
+  angVel.set(0, 0, 0);
+  orient.identity();
+  tiltX = 0;
+  tiltZ = 0;
+}
+
+// ════════════════════════════════════════════════════════════════════
+//  MAIN LOOP
+// ════════════════════════════════════════════════════════════════════
+
+let prevTime = performance.now();
+
+function animate() {
+  requestAnimationFrame(animate);
+
+  const now = performance.now();
+  const dt  = Math.min((now - prevTime) / 1000, 0.05);
+  prevTime  = now;
+
+  // ── 1. UPDATE TILT ───────────────────────────────────────────────
+  const ts = P.tiltSpeed  * (Math.PI / 180) * dt;
+  const tr = P.tiltReturn * (Math.PI / 180) * dt;
+  const tm = P.tiltMax    * (Math.PI / 180);
+
+  const pressingZ = keys['ArrowLeft']  || keys['KeyA'] || keys['ArrowRight'] || keys['KeyD'];
+  const pressingX = keys['ArrowUp']    || keys['KeyW'] || keys['ArrowDown']  || keys['KeyS'];
+
+  if (keys['ArrowRight'] || keys['KeyD']) tiltZ = Math.max(tiltZ - ts, -tm);
+  if (keys['ArrowLeft']  || keys['KeyA']) tiltZ = Math.min(tiltZ + ts,  tm);
+  if (keys['ArrowUp']    || keys['KeyW']) tiltX = Math.max(tiltX - ts, -tm);
+  if (keys['ArrowDown']  || keys['KeyS']) tiltX = Math.min(tiltX + ts,  tm);
+
+  if (!pressingZ) tiltZ = Math.abs(tiltZ) <= tr ? 0 : tiltZ - Math.sign(tiltZ) * tr;
+  if (!pressingX) tiltX = Math.abs(tiltX) <= tr ? 0 : tiltX - Math.sign(tiltX) * tr;
+
+  // ── 2. STAGE VISUAL — rotate around ball's floor contact point ───
+  // We want the stage to pivot around (pos.x, 0, pos.z) in world space
+  // so the floor doesn't shift under the ball when tilting.
+  // Pivot point P = (pos.x, 0, pos.z).
+  // stageGroup.position = P - stageQuat * P
+  const stageQuat = new THREE.Quaternion().setFromEuler(
+    new THREE.Euler(tiltX, 0, tiltZ, 'XZY')
+  );
+  const pivot       = new THREE.Vector3(pos.x, 0, pos.z);
+  const rotatedPivot = pivot.clone().applyQuaternion(stageQuat);
+  stageGroup.position.copy(pivot).sub(rotatedPivot);
+  stageGroup.setRotationFromQuaternion(stageQuat);
+
+  // ── 3. GRAVITY — always world-space down, never rotates ─────────
+  const grav = new THREE.Vector3(0, -P.gravity, 0);
+
+  // ── 4. INTEGRATE VELOCITY & POSITION ─────────────────────────────
+  vel.addScaledVector(grav, dt);
+  pos.addScaledVector(vel, dt);
+
+  // ── 5. JUMP ───────────────────────────────────────────────────────
+  if (keys['Space'] && onFloor) {
+    vel.y += 4.8;
+    onFloor = false;
+  }
+
+  // ── 6. FLOOR COLLISION ────────────────────────────────────────────
+  // Floor plane: normal = stageQuat*(0,1,0), passes through stageGroup.position
+  const floorNormal = new THREE.Vector3(0, 1, 0).applyQuaternion(stageQuat);
+  const floorOrigin = stageGroup.position.clone();
+
+  // Signed distance from ball center to floor plane
+  const dist = pos.clone().sub(floorOrigin).dot(floorNormal);
+
+  onFloor = false;
+
+  if (dist < P.radius) {
+    // Resolve penetration
+    pos.addScaledVector(floorNormal, P.radius - dist);
+
+    const vDotN = vel.dot(floorNormal);
+
+    if (vDotN < 0) {
+      // Bounce: reflect normal component
+      vel.addScaledVector(floorNormal, -vDotN * (1 + P.restitution));
+      // Kill tiny bounces
+      if (vel.dot(floorNormal) < 0.4) {
+        vel.addScaledVector(floorNormal, -vel.dot(floorNormal));
+      }
+    }
+
+    onFloor = true;
+
+    // ── 7. FRICTION IMPULSE ──────────────────────────────────────
+    // Contact point offset: r = -radius * floorNormal
+    const r = floorNormal.clone().multiplyScalar(-P.radius);
+
+    // Velocity of contact point = vel + angVel × r
+    const vContact = vel.clone().add(new THREE.Vector3().crossVectors(angVel, r));
+
+    // Remove normal component to get tangential slip velocity
+    const vContactN = floorNormal.clone().multiplyScalar(vContact.dot(floorNormal));
+    const vSlip     = vContact.clone().sub(vContactN);
+    const slipSpeed = vSlip.length();
+
+    if (slipSpeed > 1e-5) {
+      const slipDir = vSlip.clone().divideScalar(slipSpeed);
+
+      // Normal force magnitude (weight component perpendicular to floor)
+      const Fn = P.mass * Math.abs(grav.dot(floorNormal));
+
+      // Effective mass for this impulse direction (translational + rotational)
+      const rCrossDir  = new THREE.Vector3().crossVectors(r, slipDir);
+      const mEff       = 1.0 / (1.0 / P.mass + rCrossDir.lengthSq() / I_BALL);
+
+      // Impulse capped by friction cone: j <= μ * Fn * dt
+      const jMag    = Math.min(slipSpeed * mEff, P.friction * Fn * dt);
+      const impulse = slipDir.clone().multiplyScalar(-jMag);
+
+      // Apply linear impulse
+      vel.addScaledVector(impulse, 1.0 / P.mass);
+
+      // Apply angular impulse: Δω = (r × impulse) / I
+      const angImpulse = new THREE.Vector3().crossVectors(r, impulse);
+      angVel.addScaledVector(angImpulse, 1.0 / I_BALL);
+    }
+
+    // ── 8. ROLLING RESISTANCE ────────────────────────────────────
+    const Fn2    = P.mass * Math.abs(grav.dot(floorNormal));
+    const wSpeed = angVel.length();
+    if (wSpeed > 1e-6) {
+      const rrTorque = P.rollingResist * Fn2 * P.radius;
+      const dw       = Math.min(rrTorque * dt / I_BALL, wSpeed);
+      angVel.multiplyScalar(1.0 - dw / wSpeed);
+    }
+  }
+
+  // ── 9. BOUNDARY (stage-local space) ──────────────────────────────
+  // Transform ball to stage-local to check XZ bounds.
+  const stageQuatInv = stageQuat.clone().invert();
+  const localPos     = pos.clone().sub(stageGroup.position).applyQuaternion(stageQuatInv);
+  const localVel     = vel.clone().applyQuaternion(stageQuatInv);
+  const H            = P.stageSize - P.radius;
+  let   bounced      = false;
+
+  if (localPos.x >  H) { localPos.x =  H; if (localVel.x > 0) { localVel.x *= -0.3; } bounced = true; }
+  if (localPos.x < -H) { localPos.x = -H; if (localVel.x < 0) { localVel.x *= -0.3; } bounced = true; }
+  if (localPos.z >  H) { localPos.z =  H; if (localVel.z > 0) { localVel.z *= -0.3; } bounced = true; }
+  if (localPos.z < -H) { localPos.z = -H; if (localVel.z < 0) { localVel.z *= -0.3; } bounced = true; }
+
+  if (bounced) {
+    pos.copy(localPos.clone().applyQuaternion(stageQuat).add(stageGroup.position));
+    vel.copy(localVel.clone().applyQuaternion(stageQuat));
+  }
+
+  // ── 10. INTEGRATE ORIENTATION ────────────────────────────────────
+  if (angVel.lengthSq() > 1e-10) {
+    const angle = angVel.length() * dt;
+    const axis  = angVel.clone().normalize();
+    orient.premultiply(new THREE.Quaternion().setFromAxisAngle(axis, angle));
+    orient.normalize();
+  }
+
+  // ── 11. UPDATE SCENE ─────────────────────────────────────────────
+  ballMesh.position.copy(pos);
+  ballMesh.setRotationFromQuaternion(orient);
+
+  // Smooth camera follow
+  const camTarget = pos.clone().add(new THREE.Vector3(0, 18, 30));
+  camera.position.lerp(camTarget, 0.06);
+  camera.lookAt(pos);
+
+  renderer.render(scene, camera);
+}
+
+// ════════════════════════════════════════════════════════════════════
+//  UI
+// ════════════════════════════════════════════════════════════════════
+
+document.getElementById('vFriction').textContent    = P.friction;
+document.getElementById('vRestitution').textContent = P.restitution;
+document.getElementById('vRolling').textContent     = P.rollingResist;
+document.getElementById('vMass').textContent        = P.mass;
+
+animate();
+</script>
+</body>
+</html>

@@ -1,0 +1,700 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>ShaqBall 3D</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #000; overflow: hidden; font-family: 'Courier New', monospace; }
+  canvas { display: block; }
+  #ui {
+    position: fixed; top: 16px; left: 16px;
+    color: #fff; font-size: 13px; line-height: 1.9;
+    text-shadow: 0 0 8px #0ff;
+    pointer-events: none;
+  }
+  #ui b { color: #0ff; }
+  #title {
+    position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
+    font-size: 28px; font-weight: 900; color: #fff;
+    text-shadow: 0 0 20px #0ff, 0 0 40px #0ff;
+    letter-spacing: 4px; pointer-events: none;
+  }
+  #controls {
+    position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
+    color: rgba(255,255,255,0.5); font-size: 12px; text-align: center;
+    pointer-events: none;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="title">SHAQBALL 3D</div>
+<div id="ui">
+  <b>BALL</b><br>
+  Mass: <b id="vMass"></b> kg &nbsp; Radius: <b id="vRadius"></b> m<br>
+</div>
+<div id="controls">← → ↑ ↓ &nbsp;tilt stage &nbsp;|&nbsp; SPACE jump &nbsp;|&nbsp; R reset</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+// ════════════════════════════════════════════════════════════════════
+//  SPHERE-MESH COLLISION HELPERS
+//  Iterates all triangles of a mesh, finds any penetrating the sphere,
+//  returns the deepest contact point and normal.
+// ════════════════════════════════════════════════════════════════════
+
+const _triA = new THREE.Vector3();
+const _triB = new THREE.Vector3();
+const _triC = new THREE.Vector3();
+const _closest = new THREE.Vector3();
+const _edge1 = new THREE.Vector3();
+const _edge2 = new THREE.Vector3();
+
+// Closest point on triangle ABC to point P
+function closestPointOnTriangle(P, A, B, C, out) {
+  const ab = _edge1.copy(B).sub(A);
+  const ac = _edge2.copy(C).sub(A);
+  const ap = new THREE.Vector3().copy(P).sub(A);
+
+  const d1 = ab.dot(ap);
+  const d2 = ac.dot(ap);
+  if (d1 <= 0 && d2 <= 0) { out.copy(A); return; }
+
+  const bp = new THREE.Vector3().copy(P).sub(B);
+  const d3 = ab.dot(bp);
+  const d4 = ac.dot(bp);
+  if (d3 >= 0 && d4 <= d3) { out.copy(B); return; }
+
+  const cp = new THREE.Vector3().copy(P).sub(C);
+  const d5 = ab.dot(cp);
+  const d6 = ac.dot(cp);
+  if (d6 >= 0 && d5 <= d6) { out.copy(C); return; }
+
+  const vc = d1 * d4 - d3 * d2;
+  if (vc <= 0 && d1 >= 0 && d3 <= 0) {
+    const v = d1 / (d1 - d3);
+    out.copy(A).addScaledVector(ab, v); return;
+  }
+
+  const vb = d5 * d2 - d1 * d6;
+  if (vb <= 0 && d2 >= 0 && d6 <= 0) {
+    const w = d2 / (d2 - d6);
+    out.copy(A).addScaledVector(ac, w); return;
+  }
+
+  const va = d3 * d6 - d5 * d4;
+  if (va <= 0 && (d4 - d3) >= 0 && (d5 - d6) >= 0) {
+    const w = (d4 - d3) / ((d4 - d3) + (d5 - d6));
+    out.copy(B).addScaledVector(new THREE.Vector3().copy(C).sub(B), w); return;
+  }
+
+  const denom = 1.0 / (va + vb + vc);
+  const v = vb * denom;
+  const w = vc * denom;
+  out.copy(A).addScaledVector(ab, v).addScaledVector(ac, w);
+}
+
+// Find deepest sphere-mesh penetration across all triangles
+// Returns { normal, depth } in world space, or null if no contact
+function sphereMeshCollision(sphereCenter, radius, mesh) {
+  const geo = mesh.geometry;
+  const posAttr = geo.attributes.position;
+  const index = geo.index;
+  const mw = mesh.matrixWorld;
+
+  let bestDepth = 0;
+  let bestNormal = null;
+  let bestPoint = null;
+
+  const triCount = index ? index.count / 3 : posAttr.count / 3;
+  const cp = new THREE.Vector3();
+
+  for (let i = 0; i < triCount; i++) {
+    const i0 = index ? index.getX(i * 3)     : i * 3;
+    const i1 = index ? index.getX(i * 3 + 1) : i * 3 + 1;
+    const i2 = index ? index.getX(i * 3 + 2) : i * 3 + 2;
+
+    _triA.fromBufferAttribute(posAttr, i0).applyMatrix4(mw);
+    _triB.fromBufferAttribute(posAttr, i1).applyMatrix4(mw);
+    _triC.fromBufferAttribute(posAttr, i2).applyMatrix4(mw);
+
+    closestPointOnTriangle(sphereCenter, _triA, _triB, _triC, cp);
+
+    const diff = new THREE.Vector3().copy(sphereCenter).sub(cp);
+    const dist = diff.length();
+    if (dist < radius && dist < 1e-10 === false) {
+      const depth = radius - dist;
+      if (depth > bestDepth) {
+        bestDepth = depth;
+        bestNormal = diff.divideScalar(dist);
+        bestPoint = cp.clone();
+      }
+    }
+  }
+
+  if (!bestNormal) return null;
+  return { normal: bestNormal, depth: bestDepth, point: bestPoint };
+}
+
+
+
+const P = {
+  // Ball properties
+  mass:             1.0,    // kg
+  radius:           0.5,    // m
+
+  // Stage control
+  tiltSpeed:        80,     // degrees/sec
+  tiltMax:          15,     // degrees max tilt
+  tiltReturn:       120,    // degrees/sec return to level
+
+  // World
+  gravity:          25,     // m/s²
+  stageWidth:       5,      // half-width (total width = 10)
+  stageLength:      30,     // half-length (total length = 60)
+};
+
+// Moment of inertia for a solid sphere: I = 2/5 * m * r²
+const I_BALL = (2 / 5) * P.mass * P.radius * P.radius;
+
+// ════════════════════════════════════════════════════════════════════
+//  THREE.JS SETUP
+// ════════════════════════════════════════════════════════════════════
+
+const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('c'), antialias: true });
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0a0a1a);
+scene.fog = new THREE.Fog(0x0a0a1a, 50, 120);
+
+const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 500);
+camera.position.set(0, 20, 32);
+camera.lookAt(0, 0, 0);
+
+window.addEventListener('resize', () => {
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+});
+
+// Lighting
+scene.add(new THREE.AmbientLight(0x334466, 1.5));
+
+const sun = new THREE.DirectionalLight(0xffffff, 2.5);
+sun.position.set(25, 50, 25);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.camera.near = 1;
+sun.shadow.camera.far  = 200;
+sun.shadow.camera.left = sun.shadow.camera.bottom = -60;
+sun.shadow.camera.right = sun.shadow.camera.top   =  60;
+scene.add(sun);
+
+const fill = new THREE.PointLight(0x0088ff, 1.5, 80);
+fill.position.set(-20, 15, -20);
+scene.add(fill);
+
+// ════════════════════════════════════════════════════════════════════
+//  MATERIALS LIBRARY
+//  Each material has physics properties and an appearance definition.
+//  appearance.texture (optional): function(ctx, size) → draws onto a canvas
+// ════════════════════════════════════════════════════════════════════
+
+const MATERIALS = {
+  default: {
+    friction:      0.6,
+    restitution:   0.4,
+    rollingResist: 0.1,   // unchanged — the current stage value
+    appearance: {
+      color:     0xffffff,
+      roughness: 0.8,
+      metalness: 0.1,
+      texture(ctx, size) {
+        const SQ = size / 8;
+        for (let i = 0; i < 8; i++) for (let j = 0; j < 8; j++) {
+          ctx.fillStyle = (i + j) % 2 === 0 ? '#1a1a2e' : '#16213e';
+          ctx.fillRect(i * SQ, j * SQ, SQ, SQ);
+          ctx.strokeStyle = '#0ff2';
+          ctx.lineWidth = 1;
+          ctx.strokeRect(i * SQ + 0.5, j * SQ + 0.5, SQ - 1, SQ - 1);
+        }
+      },
+    },
+  },
+
+  wood: {
+    friction:      0.6,
+    restitution:   0.3,
+    rollingResist: 0.016,
+    appearance: {
+      color:     0xc8a96e,
+      roughness: 0.85,
+      metalness: 0.0,
+      texture(ctx, size) {
+        ctx.fillStyle = '#c8a96e';
+        ctx.fillRect(0, 0, size, size);
+        // Wood grain lines
+        ctx.strokeStyle = 'rgba(90,55,20,0.18)';
+        ctx.lineWidth = 2;
+        for (let y = 0; y < size; y += size / 12) {
+          ctx.beginPath();
+          ctx.moveTo(0, y + Math.sin(y * 0.3) * 6);
+          for (let x = 0; x < size; x += 4)
+            ctx.lineTo(x, y + Math.sin((x + y) * 0.08) * 8);
+          ctx.stroke();
+        }
+      },
+    },
+  },
+
+  ice: {
+    friction:      0.05,
+    restitution:   0.1,
+    rollingResist: 0.002,
+    appearance: {
+      color:     0xaadeff,
+      roughness: 0.05,
+      metalness: 0.4,
+      transparent: true,
+      opacity: 0.82,
+      texture(ctx, size) {
+        // Pale blue base with subtle crack lines
+        ctx.fillStyle = '#cceeff';
+        ctx.fillRect(0, 0, size, size);
+        ctx.strokeStyle = 'rgba(180,220,255,0.6)';
+        ctx.lineWidth = 1;
+        for (let i = 0; i < 10; i++) {
+          ctx.beginPath();
+          let x = Math.random() * size, y = Math.random() * size;
+          ctx.moveTo(x, y);
+          for (let s = 0; s < 4; s++) {
+            x += (Math.random() - 0.5) * size * 0.3;
+            y += (Math.random() - 0.5) * size * 0.3;
+            ctx.lineTo(x, y);
+          }
+          ctx.stroke();
+        }
+      },
+    },
+  },
+
+  rubber: {
+    friction:      0.9,
+    restitution:   0.7,
+    rollingResist: 0.04,
+    appearance: {
+      color:     0x222222,
+      roughness: 0.95,
+      metalness: 0.0,
+      texture(ctx, size) {
+        ctx.fillStyle = '#222222';
+        ctx.fillRect(0, 0, size, size);
+        // Subtle diamond tread pattern
+        ctx.strokeStyle = 'rgba(80,80,80,0.5)';
+        ctx.lineWidth = 1;
+        const d = size / 8;
+        for (let i = -1; i < 9; i++) for (let j = -1; j < 9; j++) {
+          const cx = i * d + (j % 2) * d * 0.5, cy = j * d;
+          ctx.beginPath();
+          ctx.moveTo(cx, cy - d * 0.4);
+          ctx.lineTo(cx + d * 0.4, cy);
+          ctx.lineTo(cx, cy + d * 0.4);
+          ctx.lineTo(cx - d * 0.4, cy);
+          ctx.closePath();
+          ctx.stroke();
+        }
+      },
+    },
+  },
+
+  metal: {
+    friction:      0.4,
+    restitution:   0.5,
+    rollingResist: 0.008,
+    appearance: {
+      color:     0x8899aa,
+      roughness: 0.3,
+      metalness: 0.9,
+      texture(ctx, size) {
+        ctx.fillStyle = '#8899aa';
+        ctx.fillRect(0, 0, size, size);
+        // Brushed metal horizontal lines
+        for (let y = 0; y < size; y += 2) {
+          const v = 136 + Math.floor(Math.random() * 20 - 10);
+          ctx.fillStyle = `rgb(${v},${v+8},${v+16})`;
+          ctx.fillRect(0, y, size, 1);
+        }
+        // Rivet dots
+        ctx.fillStyle = 'rgba(60,70,80,0.6)';
+        const sp = size / 4;
+        for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) {
+          ctx.beginPath();
+          ctx.arc(i * sp + sp / 2, j * sp + sp / 2, 4, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      },
+    },
+  },
+
+  concrete: {
+    friction:      0.7,
+    restitution:   0.2,
+    rollingResist: 0.02,
+    appearance: {
+      color:     0x999999,
+      roughness: 0.95,
+      metalness: 0.0,
+      texture(ctx, size) {
+        // Grey base with noise
+        ctx.fillStyle = '#999999';
+        ctx.fillRect(0, 0, size, size);
+        for (let i = 0; i < 3000; i++) {
+          const v = Math.floor(Math.random() * 60 + 120);
+          ctx.fillStyle = `rgba(${v},${v},${v},0.3)`;
+          ctx.fillRect(Math.random() * size, Math.random() * size, 2, 2);
+        }
+        // Expansion joint lines
+        ctx.strokeStyle = 'rgba(80,80,80,0.4)';
+        ctx.lineWidth = 2;
+        [size / 3, size * 2 / 3].forEach(p => {
+          ctx.beginPath(); ctx.moveTo(p, 0); ctx.lineTo(p, size); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(0, p); ctx.lineTo(size, p); ctx.stroke();
+        });
+      },
+    },
+  },
+
+  sand: {
+    friction:      0.8,
+    restitution:   0.05,
+    rollingResist: 0.3,
+    appearance: {
+      color:     0xe8d5a3,
+      roughness: 1.0,
+      metalness: 0.0,
+      texture(ctx, size) {
+        ctx.fillStyle = '#e8d5a3';
+        ctx.fillRect(0, 0, size, size);
+        // Speckled sand grain noise
+        for (let i = 0; i < 6000; i++) {
+          const v = Math.floor(Math.random() * 40);
+          const r = 200 + v, g = 180 + v, b = 130 + Math.floor(v * 0.5);
+          ctx.fillStyle = `rgba(${r},${g},${b},0.4)`;
+          ctx.fillRect(Math.random() * size, Math.random() * size, 1.5, 1.5);
+        }
+      },
+    },
+  },
+
+  wall: {
+    friction:      0.5,
+    restitution:   0.3,
+    rollingResist: 0.01,
+    appearance: {
+      color:     0x0088ff,
+      roughness: 0.3,
+      metalness: 0.6,
+      transparent: true,
+      opacity: 0.45,
+    },
+  },
+};
+
+// ════════════════════════════════════════════════════════════════════
+//  BUILD THREE.JS MATERIAL FROM APPEARANCE DEFINITION
+// ════════════════════════════════════════════════════════════════════
+
+function buildThreeMaterial(matName, tileSize = 1) {
+  const mat = MATERIALS[matName] || MATERIALS.default;
+  const app = mat.appearance;
+
+  const params = {
+    color:     app.color     ?? 0xffffff,
+    roughness: app.roughness ?? 0.8,
+    metalness: app.metalness ?? 0.0,
+  };
+  if (app.transparent) { params.transparent = true; params.opacity = app.opacity ?? 1.0; }
+
+  let tex = null;
+  if (app.texture) {
+    const size = 512;
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = size;
+    app.texture(canvas.getContext('2d'), size);
+    tex = new THREE.CanvasTexture(canvas);
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    params.map = tex;
+  }
+
+  const threeMat = new THREE.MeshStandardMaterial(params);
+  // Store on instance (not in constructor) to avoid Three.js unknown-property warnings
+  threeMat.userData._tex      = tex;
+  threeMat.userData._tileSize = tileSize;
+  return threeMat;
+}
+
+// ════════════════════════════════════════════════════════════════════
+//  STAGE
+// ════════════════════════════════════════════════════════════════════
+
+const stageGroup = new THREE.Group();
+scene.add(stageGroup);
+
+// Helper: add any mesh to the stage with a named physics material
+// geometry    — THREE.BufferGeometry
+// matName     — key in MATERIALS
+// position    — THREE.Vector3 (local to stage)
+// rotation    — THREE.Euler  (optional)
+// tileSize    — world units per texture tile (default 1)
+// castShadow  — bool (default true)
+// collidable  — bool (default true) — set false for purely decorative objects
+function addToStage(geometry, matName, {
+  position   = new THREE.Vector3(),
+  rotation   = new THREE.Euler(),
+  tileSize   = 1,
+  castShadow = true,
+  collidable = true,
+} = {}) {
+  const threeMat = buildThreeMaterial(matName, tileSize);
+  const mesh     = new THREE.Mesh(geometry, threeMat);
+
+  mesh.position.copy(position);
+  mesh.rotation.copy(rotation);
+  mesh.castShadow    = castShadow;
+  mesh.receiveShadow = true;
+  mesh.userData.physicsMaterial = matName;
+  mesh.userData.collidable      = collidable;
+
+  // Auto-set texture repeat based on bounding box + tileSize
+  if (threeMat.userData._tex) {
+    geometry.computeBoundingBox();
+    const bb    = geometry.boundingBox;
+    const sizeX = (bb.max.x - bb.min.x) / tileSize;
+    const sizeZ = (bb.max.z - bb.min.z) / tileSize;
+    const TILES_IN_TEX = 8;
+    threeMat.userData._tex.repeat.set(sizeX / TILES_IN_TEX, sizeZ / TILES_IN_TEX);
+  }
+
+  stageGroup.add(mesh);
+  return mesh;
+}
+
+// ── Build the stage ───────────────────────────────────────────────
+addToStage(
+  new THREE.PlaneGeometry(P.stageWidth * 2, P.stageLength * 2)
+    .applyMatrix4(new THREE.Matrix4().makeRotationX(-Math.PI / 2)),
+  'default',
+  { position: new THREE.Vector3(0, 0, 0), collidable: true }
+);
+
+const wallThickness = 0.3;
+[-P.stageWidth, P.stageWidth].forEach(x => {
+  addToStage(
+    new THREE.BoxGeometry(wallThickness, 0.6, P.stageLength * 2),
+    'wall',
+    { position: new THREE.Vector3(x, 0.3, 0) }
+  );
+});
+
+// ════════════════════════════════════════════════════════════════════
+//  BALL
+// ════════════════════════════════════════════════════════════════════
+
+const shaqTex = new THREE.TextureLoader().load('shaq.png');
+const ballMesh = new THREE.Mesh(
+  new THREE.SphereGeometry(P.radius, 32, 32),
+  new THREE.MeshStandardMaterial({ map: shaqTex, roughness: 0.6, metalness: 0.1 })
+);
+ballMesh.castShadow = true;
+ballMesh.receiveShadow = true;
+scene.add(ballMesh);
+
+// ════════════════════════════════════════════════════════════════════
+//  PHYSICS STATE  (all world-space)
+// ════════════════════════════════════════════════════════════════════
+
+let pos    = new THREE.Vector3(0, P.radius, 0);
+let vel    = new THREE.Vector3(0, 0, 0);
+let angVel = new THREE.Vector3(0, 0, 0);
+let orient = new THREE.Quaternion();
+let onFloor = false;
+
+// Stage tilt (radians)
+let tiltX = 0;
+let tiltZ = 0;
+
+// ════════════════════════════════════════════════════════════════════
+//  INPUT
+// ════════════════════════════════════════════════════════════════════
+
+const keys = {};
+window.addEventListener('keydown', e => {
+  keys[e.code] = true;
+  if (e.code === 'Space') e.preventDefault();
+  if (e.code === 'KeyR')  reset();
+});
+window.addEventListener('keyup', e => { keys[e.code] = false; });
+
+function reset() {
+  pos.set(0, P.radius, 0);
+  vel.set(0, 0, 0);
+  angVel.set(0, 0, 0);
+  orient.identity();
+  tiltX = 0;
+  tiltZ = 0;
+}
+
+// ════════════════════════════════════════════════════════════════════
+//  MAIN LOOP
+// ════════════════════════════════════════════════════════════════════
+
+let prevTime = performance.now();
+
+function animate() {
+  requestAnimationFrame(animate);
+
+  const now = performance.now();
+  const dt  = Math.min((now - prevTime) / 1000, 0.05);
+  prevTime  = now;
+
+  // ── 1. UPDATE TILT ───────────────────────────────────────────────
+  const ts = P.tiltSpeed  * (Math.PI / 180) * dt;
+  const tr = P.tiltReturn * (Math.PI / 180) * dt;
+  const tm = P.tiltMax    * (Math.PI / 180);
+
+  const pressingZ = keys['ArrowLeft']  || keys['KeyA'] || keys['ArrowRight'] || keys['KeyD'];
+  const pressingX = keys['ArrowUp']    || keys['KeyW'] || keys['ArrowDown']  || keys['KeyS'];
+
+  if (keys['ArrowRight'] || keys['KeyD']) tiltZ = Math.max(tiltZ - ts, -tm);
+  if (keys['ArrowLeft']  || keys['KeyA']) tiltZ = Math.min(tiltZ + ts,  tm);
+  if (keys['ArrowUp']    || keys['KeyW']) tiltX = Math.max(tiltX - ts, -tm);
+  if (keys['ArrowDown']  || keys['KeyS']) tiltX = Math.min(tiltX + ts,  tm);
+
+  if (!pressingZ) tiltZ = Math.abs(tiltZ) <= tr ? 0 : tiltZ - Math.sign(tiltZ) * tr;
+  if (!pressingX) tiltX = Math.abs(tiltX) <= tr ? 0 : tiltX - Math.sign(tiltX) * tr;
+
+  // ── 2. STAGE VISUAL — rotate around ball's floor contact point ───
+  // We want the stage to pivot around (pos.x, 0, pos.z) in world space
+  // so the floor doesn't shift under the ball when tilting.
+  // Pivot point P = (pos.x, 0, pos.z).
+  // stageGroup.position = P - stageQuat * P
+  const stageQuat = new THREE.Quaternion().setFromEuler(
+    new THREE.Euler(tiltX, 0, tiltZ, 'XZY')
+  );
+  const pivot       = new THREE.Vector3(pos.x, 0, pos.z);
+  const rotatedPivot = pivot.clone().applyQuaternion(stageQuat);
+  stageGroup.position.copy(pivot).sub(rotatedPivot);
+  stageGroup.setRotationFromQuaternion(stageQuat);
+
+  // ── 3. GRAVITY — always world-space down, never rotates ─────────
+  const grav = new THREE.Vector3(0, -P.gravity, 0);
+
+  // ── 4. INTEGRATE VELOCITY & POSITION ─────────────────────────────
+  vel.addScaledVector(grav, dt);
+  pos.addScaledVector(vel, dt);
+
+  // ── 5. JUMP ───────────────────────────────────────────────────────
+  if (keys['Space'] && onFloor) {
+    vel.y += 4.8;
+    onFloor = false;
+  }
+
+  // ── 6. SPHERE-MESH COLLISION against all stage geometry ──────────
+  stageGroup.updateMatrixWorld(true);
+  onFloor = false;
+
+  stageGroup.traverse(child => {
+    if (!child.isMesh) return;
+    if (child.userData.collidable === false) return;
+
+    const hit = sphereMeshCollision(pos, P.radius, child);
+    if (!hit) return;
+
+    // Look up physics properties from the mesh's material
+    const phys = MATERIALS[child.userData.physicsMaterial] || MATERIALS.default;
+
+    const { normal: contactNormal, depth: penetration } = hit;
+
+    // Resolve penetration
+    pos.addScaledVector(contactNormal, penetration);
+
+    const vDotN = vel.dot(contactNormal);
+    if (vDotN < 0) {
+      vel.addScaledVector(contactNormal, -vDotN * (1 + phys.restitution));
+      if (vel.dot(contactNormal) < 0.4) {
+        vel.addScaledVector(contactNormal, -vel.dot(contactNormal));
+      }
+    }
+
+    onFloor = true;
+
+    // ── FRICTION IMPULSE ─────────────────────────────────────────
+    const r        = contactNormal.clone().multiplyScalar(-P.radius);
+    const vContact = vel.clone().add(new THREE.Vector3().crossVectors(angVel, r));
+    const vContactN = contactNormal.clone().multiplyScalar(vContact.dot(contactNormal));
+    const vSlip    = vContact.clone().sub(vContactN);
+    const slipSpeed = vSlip.length();
+
+    if (slipSpeed > 1e-5) {
+      const slipDir   = vSlip.clone().divideScalar(slipSpeed);
+      const Fn        = P.mass * Math.abs(grav.dot(contactNormal));
+      const rCrossDir = new THREE.Vector3().crossVectors(r, slipDir);
+      const mEff      = 1.0 / (1.0 / P.mass + rCrossDir.lengthSq() / I_BALL);
+      const jMag      = Math.min(slipSpeed * mEff, phys.friction * Fn * dt);
+      const impulse   = slipDir.clone().multiplyScalar(-jMag);
+
+      vel.addScaledVector(impulse, 1.0 / P.mass);
+      angVel.addScaledVector(new THREE.Vector3().crossVectors(r, impulse), 1.0 / I_BALL);
+    }
+
+    // ── ROLLING RESISTANCE ───────────────────────────────────────
+    const Fn2    = P.mass * Math.abs(grav.dot(contactNormal));
+    const wSpeed = angVel.length();
+    if (wSpeed > 1e-6) {
+      const dw = Math.min(phys.rollingResist * Fn2 * P.radius * dt / I_BALL, wSpeed);
+      angVel.multiplyScalar(1.0 - dw / wSpeed);
+    }
+  });
+
+  // ── 9. FALL OFF — reset when ball drops far enough ────────────────
+  if (pos.y < -8) {
+    reset();
+    return;
+  }
+
+  // ── 10. INTEGRATE ORIENTATION ────────────────────────────────────
+  if (angVel.lengthSq() > 1e-10) {
+    const angle = angVel.length() * dt;
+    const axis  = angVel.clone().normalize();
+    orient.premultiply(new THREE.Quaternion().setFromAxisAngle(axis, angle));
+    orient.normalize();
+  }
+
+  // ── 11. UPDATE SCENE ─────────────────────────────────────────────
+  ballMesh.position.copy(pos);
+  ballMesh.setRotationFromQuaternion(orient);
+
+  // Smooth camera follow
+  const camTarget = pos.clone().add(new THREE.Vector3(0, 8, 14));
+  camera.position.lerp(camTarget, 0.06);
+  camera.lookAt(pos);
+
+  renderer.render(scene, camera);
+}
+
+// ════════════════════════════════════════════════════════════════════
+//  UI
+// ════════════════════════════════════════════════════════════════════
+
+document.getElementById('vMass').textContent   = P.mass;
+document.getElementById('vRadius').textContent = P.radius;
+
+animate();
+</script>
+</body>
+</html>
