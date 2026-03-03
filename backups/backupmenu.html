@@ -42,64 +42,13 @@
   }
   .mbtn:hover { background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.6); color: #fff; }
   #menu-hint { margin-top: 40px; font-size: 11px; letter-spacing: 2px; color: rgba(255,255,255,0.18); }
-  #lab-panel {
-    display: none;
-    position: fixed; top: 50%; right: 16px; transform: translateY(-50%);
-    background: rgba(0,0,0,0.7); border: 1px solid rgba(255,255,255,0.15);
-    padding: 14px 16px; font-family: monospace; font-size: 12px; color: #ccc;
-    z-index: 100; min-width: 150px; user-select: none;
-  }
-  #lab-panel h3 { font-size: 11px; letter-spacing: 3px; color: rgba(255,255,255,0.4); margin-bottom: 12px; text-transform: uppercase; }
-  .lab-toggle {
-    display: flex; align-items: center; gap: 10px;
-    padding: 6px 0; cursor: pointer; border-bottom: 1px solid rgba(255,255,255,0.07);
-  }
-  .lab-toggle:last-child { border-bottom: none; }
-  .lab-toggle:hover { color: #fff; }
-  .lab-pip {
-    width: 12px; height: 12px; border-radius: 50%;
-    border: 1px solid rgba(255,255,255,0.3); flex-shrink: 0;
-    transition: box-shadow .15s;
-  }
-  .lab-pip.on { box-shadow: 0 0 6px 2px currentColor; }
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
-<canvas id="radar-canvas" style="position:fixed;top:0;left:0;pointer-events:none;z-index:10;"></canvas>
-<div id="collect-flash" style="position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:20;opacity:0;background:white;transition:opacity 0.05s;"></div>
 <div id="title">SHAQBALL 3D</div>
 <div id="controls">WASD tilt &nbsp;|&nbsp; ← → ↑ ↓ orbit camera &nbsp;|&nbsp; SPACE jump &nbsp;|&nbsp; R reset &nbsp;|&nbsp; TAB diag</div>
 <div id="hud" style="position:fixed;top:16px;right:16px;font-family:monospace;font-size:13px;text-align:right;pointer-events:none;line-height:2;"></div>
-<div id="lab-panel">
-  <h3>⚗ Powerups</h3>
-  <div class="lab-toggle" data-fx="sizeUp">
-    <div class="lab-pip" style="color:#f0c040;background:#f0c040;"></div>
-    <span>Size Up</span>
-  </div>
-  <div class="lab-toggle" data-fx="bouncyBall">
-    <div class="lab-pip" style="color:#40e0ff;background:#40e0ff;"></div>
-    <span>Bouncy Ball</span>
-  </div>
-  <div class="lab-toggle" data-fx="speedUp">
-    <div class="lab-pip" style="color:#ff6040;background:#ff6040;"></div>
-    <span>Speed Up</span>
-  </div>
-  <div class="lab-toggle" data-fx="hasJetpack">
-    <div class="lab-pip" style="color:#80ff80;background:#80ff80;"></div>
-    <span>Jetpack</span>
-  </div>
-  <h3 style="margin-top:16px;">Props</h3>
-  <div class="lab-toggle" id="prop-clear" style="color:rgba(255,100,100,0.7);">
-    <span>Clear props</span>
-  </div>
-  <div class="lab-toggle" data-prop="spinner">
-    <span>+ Spinner</span>
-  </div>
-  <div class="lab-toggle" data-prop="launcher">
-    <span>+ Launcher</span>
-  </div>
-</div>
 <div id="menu">
   <div id="menu-title">SHAQBALL 3D</div>
   <div id="menu-sub">ROLL &nbsp;·&nbsp; BOUNCE &nbsp;·&nbsp; SURVIVE</div>
@@ -125,9 +74,6 @@ const I_BALL = 0.4 * P.mass * P.radius * P.radius;
 
 // ── BASE PHYSICS (reset target) ───────────────────────────────────────────────
 const BASE = { radius: P.radius, gravity: P.gravity, jumpSpeed: 9.6 };
-
-// ── GAME MODE ─────────────────────────────────────────────────────────────────
-let gameMode = 'menu';
 
 // ── POWERUP STATE ─────────────────────────────────────────────────────────────
 const fx = { sizeUp: false, bouncyBall: false, speedUp: false, hasJetpack: false };
@@ -192,15 +138,12 @@ const POWERUP_DEFS = {
 const powerupMeshes = [];
 
 function spawnPowerups() {
-  // No pickups in test lab — powerups are toggled via the side panel
-  if (gameMode === 'test') return;
-
   // Clear old
   powerupMeshes.forEach(m => stageGroup.remove(m));
   powerupMeshes.length = 0;
 
   const types = Object.keys(POWERUP_DEFS);
-  const count = 2 + Math.floor(rng() * 2);
+  const count = 4 + Math.floor(rng() * 4);
   for (let i = 0; i < count; i++) {
     const type = rngItem(types);
     const def  = POWERUP_DEFS[type];
@@ -285,7 +228,7 @@ const MATERIALS = {
     },
   },
   rubber: {
-    friction: 0.9, restitution: 0.665, rollingResist: 0.04,
+    friction: 0.9, restitution: 0.95, rollingResist: 0.04,
     appearance: {
       color: 0x222222, roughness: 0.95, metalness: 0,
       texture(ctx, s) {
@@ -450,30 +393,11 @@ function buildThreeMat(matName, tileSize = 1) {
   return mat;
 }
 
-// Materials that should NOT receive random rotation jitter
-const NO_JITTER_MATS = new Set(['bouncepad', 'sand', 'ice', 'wall']);
-
-// Box-Muller normal sample, sigma in radians, clamped to ±maxRad
-function jitterAngle(sigma, maxRad) {
-  const u = 1 - Math.random(), v = Math.random();
-  const n = Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
-  return Math.max(-maxRad, Math.min(maxRad, n * sigma));
-}
-
-function addToStage(geo, matName, { position = new THREE.Vector3(), rotation = new THREE.Euler(), tileSize = 1, collidable = true, noJitter = false } = {}) {
+function addToStage(geo, matName, { position = new THREE.Vector3(), rotation = new THREE.Euler(), tileSize = 1, collidable = true } = {}) {
   const mat  = buildThreeMat(matName, tileSize);
   const mesh = new THREE.Mesh(geo, mat);
   mesh.position.copy(position);
   mesh.rotation.copy(rotation);
-
-  // Apply subtle random rotation jitter to eligible materials
-  if (!noJitter && !NO_JITTER_MATS.has(matName)) {
-    const sigma  = THREE.MathUtils.degToRad(3.5); // ~3.5° std dev
-    const maxRad = THREE.MathUtils.degToRad(10);  // hard cap ±10°
-    mesh.rotation.x += jitterAngle(sigma, maxRad);
-    mesh.rotation.y += jitterAngle(sigma, maxRad);
-    mesh.rotation.z += jitterAngle(sigma, maxRad);
-  }
   mesh.castShadow = true;
   mesh.receiveShadow = true;
   mesh.userData.physicsMaterial = matName;
@@ -501,7 +425,7 @@ const stageCtrZ = (ZN + ZF) / 2;             // center Z    = 40
 addToStage(
   new THREE.PlaneGeometry(W*2, stageLen).applyMatrix4(new THREE.Matrix4().makeRotationX(-Math.PI/2)),
   'default',
-  { position: V(0, 0, stageCtrZ), noJitter: true }
+  { position: V(0, 0, stageCtrZ) }
 );
 
 const rng = () => Math.random();
@@ -565,32 +489,6 @@ function clearSpinners() {
   spinners.length = 0;
 }
 
-// ── LAB PROPS ─────────────────────────────────────────────────────────────────
-const labProps = []; // groups added via the test lab prop panel
-
-function clearLabProps() {
-  labProps.forEach(g => stageGroup.remove(g));
-  labProps.length = 0;
-  // Also clear spinners/launchers that were spawned as props
-  clearSpinners();
-  clearLaunchers();
-}
-
-function spawnLabProp(type) {
-  const zone = window.LAB_PROP_ZONE;
-  if (!zone) return;
-  const x = (Math.random() * 2 - 1) * zone.xHalf;
-  const z = zone.zNear + Math.random() * (zone.zFar - zone.zNear);
-  const pos = new THREE.Vector3(x, zone.y, z);
-  if (type === 'spinner') {
-    addSpinner(pos, 0.8 + Math.random() * 0.4, (Math.random() < 0.5 ? 1 : -1) * (1.5 + Math.random()));
-    labProps.push(spinners[spinners.length - 1].group);
-  } else if (type === 'launcher') {
-    addLauncher(pos, Math.random() * Math.PI * 2);
-    labProps.push(launchers[launchers.length - 1].group);
-  }
-}
-
 function spawnSpinners() {
   clearSpinners();
   const count = 1 + Math.floor(rng() * 3);
@@ -603,279 +501,10 @@ function spawnSpinners() {
   }
 }
 
-// ── LAUNCHERS ─────────────────────────────────────────────────────────────────
-// Each launcher: a fixed base + a pivot group containing one long arm/paddle.
-// States: 'idle' → 'windup' → 'swing' → 'return' → 'cooldown' → 'idle'
-const launchers = [];
-
-const LAUNCHER_TRIGGER_R  = 5.0;   // world-space radius to activate
-const LAUNCHER_WINDUP_T   = 0.8;   // seconds of windup before swing
-const LAUNCHER_SWING_SPD  = 5.04;  // rad/s during swing (6.3 * 0.8)
-const LAUNCHER_SWING_ARC  = Math.PI * 0.85; // total arc of swing (radians)
-const LAUNCHER_RETURN_SPD = 1.5;   // rad/s on return
-const LAUNCHER_COOLDOWN_T = 1.0;   // seconds before can retrigger
-
-function addLauncher(position, yaw) {
-  const scale  = rngRange(0.9, 1.3);
-  const group  = new THREE.Group();
-  group.position.copy(position);
-  group.rotation.y = yaw;
-  stageGroup.add(group);
-
-  // Base — short thick cylinder
-  const base = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.5 * scale, 0.6 * scale, 0.6 * scale, 12),
-    buildThreeMat('metal')
-  );
-  base.castShadow = true;
-  base.position.y = 0.3 * scale;
-  base.userData.collidable = false;
-  group.add(base);
-
-  // Pivot group — rotates around Y to swing the arm
-  const pivot = new THREE.Group();
-  pivot.position.y = 0.6 * scale;
-  group.add(pivot);
-
-  // Arm — long flat box, offset so its inner end is at the pivot
-  const armL = 4.5 * scale;
-  const armH = 1.8 * scale;
-  const armW = 0.35 * scale;
-  const arm  = new THREE.Mesh(
-    new THREE.BoxGeometry(armL, armH, armW),
-    buildThreeMat('concrete')
-  );
-  arm.position.set(armL / 2, 0, 0); // pivot at left end
-  arm.castShadow = true;
-  arm.userData.physicsMaterial = 'concrete';
-  arm.userData.collidable = true;
-  pivot.add(arm);
-
-  // Rest angle: arm points along -Z (into stage), swing sweeps toward +X
-  const restAngle  = -Math.PI / 2;
-  pivot.rotation.y = restAngle;
-
-  // Danger zone — translucent red sector showing the swing arc
-  // Arm tip is at group-space angle π/2 at rest and sweeps DOWN to π/2 - LAUNCHER_SWING_ARC
-  const dangerSegments = 24;
-  const dangerGeom = new THREE.BufferGeometry();
-  const dangerVerts = [];
-  const innerR = 0.3 * scale;
-  const outerR = (4.5 + 0.5) * scale; // (armBaseLength + tip half-width) * scale — not armL*scale again
-  const fanStart = Math.PI / 2 - LAUNCHER_SWING_ARC; // where arm ends up
-  const fanEnd   = Math.PI / 2;                       // where arm starts (at rest)
-  for (let i = 0; i < dangerSegments; i++) {
-    const a0 = fanStart + (LAUNCHER_SWING_ARC / dangerSegments) * i;
-    const a1 = fanStart + (LAUNCHER_SWING_ARC / dangerSegments) * (i + 1);
-    dangerVerts.push(
-      Math.cos(a0) * innerR, 0, Math.sin(a0) * innerR,
-      Math.cos(a0) * outerR, 0, Math.sin(a0) * outerR,
-      Math.cos(a1) * outerR, 0, Math.sin(a1) * outerR,
-      Math.cos(a0) * innerR, 0, Math.sin(a0) * innerR,
-      Math.cos(a1) * outerR, 0, Math.sin(a1) * outerR,
-      Math.cos(a1) * innerR, 0, Math.sin(a1) * innerR,
-    );
-  }
-  dangerGeom.setAttribute('position', new THREE.Float32BufferAttribute(dangerVerts, 3));
-  dangerGeom.computeVertexNormals();
-  const dangerMesh = new THREE.Mesh(dangerGeom, new THREE.MeshBasicMaterial({
-    color: 0xff2200, transparent: true, opacity: 0.22,
-    side: THREE.DoubleSide, depthWrite: false,
-  }));
-  dangerMesh.position.y = 0.05 * scale; // just above floor
-  dangerMesh.userData.collidable = false;
-  group.add(dangerMesh);
-
-  launchers.push({
-    group, pivot, scale,
-    restAngle,
-    state: 'idle',      // idle | windup | swing | return | cooldown
-    timer: 0,
-    swungAngle: 0,      // how many radians have been swept this swing
-  });
-}
-
-function clearLaunchers() {
-  launchers.forEach(l => stageGroup.remove(l.group));
-  launchers.length = 0;
-}
-
-function spawnLaunchers() {
-  clearLaunchers();
-  const count = 1 + Math.floor(rng() * 2); // 1–2 per level
-  for (let i = 0; i < count; i++) {
-    const p   = rngPos(4); p.y = 0;
-    const yaw = rng() * Math.PI * 2;
-    addLauncher(p, yaw);
-  }
-}
-
-function updateLaunchers(dt, ballWorldPos) {
-  launchers.forEach(l => {
-    // Convert ball to launcher group's local space for sector test
-    const localBall = l.group.worldToLocal(ballWorldPos.clone());
-    const bx = localBall.x, bz = localBall.z;
-    const distFromPivot = Math.sqrt(bx * bx + bz * bz);
-    const outerR = (4.5 + 0.5) * l.scale; // matches danger zone outerR
-    const innerR = 0.3 * l.scale;
-
-    // Arm sweeps from π/2 down to π/2 - LAUNCHER_SWING_ARC in group-space XZ
-    const fanStart = Math.PI / 2 - LAUNCHER_SWING_ARC;
-    const fanEnd   = Math.PI / 2;
-    const ballAngle = Math.atan2(bz, bx);
-    // Normalise to [fanStart, fanStart + 2π) then check if within arc
-    let rel = ballAngle - fanStart;
-    rel = ((rel % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
-    const inSector = distFromPivot >= innerR &&
-                     distFromPivot <= outerR &&
-                     rel <= LAUNCHER_SWING_ARC;
-
-    switch (l.state) {
-      case 'idle':
-        if (inSector) {
-          l.state = 'windup';
-          l.timer = 0;
-          l.pivot.children[0].material.emissive = new THREE.Color(0xff4400);
-          l.pivot.children[0].material.emissiveIntensity = 0.8;
-        }
-        break;
-
-      case 'windup':
-        l.timer += dt;
-        // Pulse emissive intensity during windup
-        l.pivot.children[0].material.emissiveIntensity = 0.4 + 0.6 * Math.sin(l.timer * 20);
-        if (l.timer >= LAUNCHER_WINDUP_T) {
-          l.state = 'swing';
-          l.swungAngle = 0;
-        }
-        break;
-
-      case 'swing': {
-        const step = LAUNCHER_SWING_SPD * dt;
-        l.pivot.rotation.y += step;
-        l.swungAngle += step;
-        if (l.swungAngle >= LAUNCHER_SWING_ARC) {
-          l.state = 'return';
-          // Clear emissive
-          l.pivot.children[0].material.emissive = new THREE.Color(0x000000);
-          l.pivot.children[0].material.emissiveIntensity = 0;
-        }
-        break;
-      }
-
-      case 'return': {
-        // Rotate back toward rest angle
-        const diff = l.restAngle - l.pivot.rotation.y;
-        // Normalise diff to [-PI, PI]
-        const wrapped = ((diff + Math.PI) % (Math.PI * 2)) - Math.PI;
-        const step = LAUNCHER_RETURN_SPD * dt;
-        if (Math.abs(wrapped) <= step) {
-          l.pivot.rotation.y = l.restAngle;
-          l.state = 'cooldown';
-          l.timer = 0;
-        } else {
-          l.pivot.rotation.y += Math.sign(wrapped) * step;
-        }
-        break;
-      }
-
-      case 'cooldown':
-        l.timer += dt;
-        if (l.timer >= LAUNCHER_COOLDOWN_T) l.state = 'idle';
-        break;
-    }
-  });
-}
-
-// ── TEST LAB ──────────────────────────────────────────────────────────────────
-function buildTestLab() {
-  // Clear everything from stage
-  stageGroup.children.slice(1).forEach(c => stageGroup.remove(c));
-  clearSpinners();
-  clearLaunchers();
-  labProps.length = 0; // already removed via stageGroup clear above
-
-  // ── Ramp + Platform geometry ──────────────────────────────────────────────
-  // Ramp surface runs from (Z=15, Y=0) to (Z=35, Y=platH).
-  // Box center is the surface midpoint offset inward by rampThick/2 along the
-  // surface normal so the top face of the box IS the ramp surface.
-  const platH     = 5.0;   // platform top surface height
-  const rampZNear = 15, rampZFar = 35;
-  const rampW     = 8;     // narrow ramp width
-  const rampL     = rampZFar - rampZNear;   // 20 units horizontal
-  const rampThick = 1.2;   // box thickness (buried below so only top surface matters)
-  const theta     = Math.atan2(platH, rampL);
-
-  // Slope unit vector and inward normal
-  const hyp = Math.sqrt(rampL * rampL + platH * platH);
-  const nZ  =  platH / hyp;   // normal Z component (points toward near)
-  const nY  = -rampL / hyp;   // normal Y component (points down)
-
-  // Box center = surface midpoint + inward normal * rampThick/2
-  const boxCZ = (rampZNear + rampZFar) / 2 + nZ * rampThick / 2;
-  const boxCY = platH / 2                  + nY * rampThick / 2;
-
-  addToStage(new THREE.BoxGeometry(rampW, rampThick, rampL), 'concrete', {
-    position: new THREE.Vector3(0, boxCY, boxCZ),
-    rotation: new THREE.Euler(-theta, 0, 0),
-    noJitter: true,
-  });
-
-  // ── High platform: 20 units long, top surface exactly at platH ──────────
-  const platThick = 0.5;
-  const platZNear = rampZFar;      // 35
-  const platZFar  = platZNear + 20; // 55
-  const platL     = 20;
-  const platW     = 14;
-  addToStage(new THREE.BoxGeometry(platW, platThick, platL), 'default', {
-    position: new THREE.Vector3(0, platH - platThick / 2, (platZNear + platZFar) / 2),
-    noJitter: true,
-  });
-
-  // Side rails on platform
-  const railH = 1.0, railT = 0.25;
-  addToStage(new THREE.BoxGeometry(railT, railH, platL), 'metal', {
-    position: new THREE.Vector3(-platW / 2 + railT / 2, platH + railH / 2, (platZNear + platZFar) / 2),
-    noJitter: true,
-  });
-  addToStage(new THREE.BoxGeometry(railT, railH, platL), 'metal', {
-    position: new THREE.Vector3( platW / 2 - railT / 2, platH + railH / 2, (platZNear + platZFar) / 2),
-    noJitter: true,
-  });
-
-  // ── Prop zone: ground level, square, starts beyond the high platform ─────
-  const propZNear = platZFar + 3;          // 58
-  const propSize  = 15;                    // square
-  const propZFar  = propZNear + propSize;  // 78
-  const propZMid  = (propZNear + propZFar) / 2;
-  const propXHalf = propSize / 2;          // 10 — matches width
-  const propFloorY = 0.05;
-
-  // Prop zone floor slab
-  addToStage(new THREE.BoxGeometry(propXHalf * 2, 0.1, propZFar - propZNear), 'concrete', {
-    position: new THREE.Vector3(0, propFloorY / 2, propZMid),
-    noJitter: true,
-  });
-
-  // Corner posts
-  const pR = 0.12, pH = 1.5;
-  [[-propXHalf, propZNear], [propXHalf, propZNear],
-   [-propXHalf, propZFar ], [propXHalf, propZFar ]].forEach(([x, z]) => {
-    addToStage(new THREE.CylinderGeometry(pR, pR, pH, 8), 'metal', {
-      position: new THREE.Vector3(x, pH / 2, z),
-      noJitter: true,
-    });
-  });
-
-  // Store prop zone bounds for side panel use
-  window.LAB_PROP_ZONE = { y: propFloorY, xHalf: propXHalf - 1, zNear: propZNear + 1, zFar: propZFar - 1 };
-}
-
 function buildStage() {
   // Remove all children except the permanent floor
   stageGroup.children.slice(1).forEach(c => stageGroup.remove(c));
   clearSpinners();
-  clearLaunchers();
 
   // Sand/ice patches — capped to max 8 wide so there's always a gap to squeeze through
   const patchCount = 3 + Math.floor(rng() * 4);
@@ -933,21 +562,12 @@ function buildStage() {
 
   // Torus half-pipe (only if corridor is wide enough to make sense)
   if (rng() < 0.6) {
-    const r     = rngRange(2, 4);
-    const tube  = rngRange(0.5, 1);
-    const mat   = rngItem(rampMats);
-    const p     = rngPos(3); p.y = rngRange(1, 3);
-    const rot   = E(Math.PI/2, rngRange(0, Math.PI*2), rngRange(0, Math.PI*2));
-    const torusMat = buildThreeMat(mat);
-    torusMat.side = THREE.DoubleSide;
-    const torusMesh = new THREE.Mesh(new THREE.TorusGeometry(r, tube, 8, 24, Math.PI), torusMat);
-    torusMesh.position.copy(p);
-    torusMesh.rotation.copy(rot);
-    torusMesh.castShadow = true;
-    torusMesh.receiveShadow = true;
-    torusMesh.userData.physicsMaterial = mat;
-    torusMesh.userData.collidable = true;
-    stageGroup.add(torusMesh);
+    const r = rngRange(2, 4);
+    const p = rngPos(3); p.y = rngRange(1, 3);
+    addToStage(new THREE.TorusGeometry(r, rngRange(0.5, 1), 8, 24, Math.PI), rngItem(rampMats), {
+      position: p,
+      rotation: E(Math.PI/2, rngRange(0, Math.PI*2), 0),
+    });
   }
 
   // Bounce pads — flat cylinders on the floor
@@ -959,7 +579,6 @@ function buildStage() {
   }
 
   spawnSpinners();
-  spawnLaunchers();
 }
 
 // ── BALL ──────────────────────────────────────────────────────────────────────
@@ -972,192 +591,8 @@ ballMesh.receiveShadow = true;
 ballMesh.visible = false;
 scene.add(ballMesh);
 
-// ── JETPACK EXHAUST PARTICLES ─────────────────────────────────────────────────
-const JET_MAX_PARTICLES = 60;
-const jetParticles = []; // {pos, vel, life, maxLife}
-const jetGeo = new THREE.BufferGeometry();
-const jetPositions = new Float32Array(JET_MAX_PARTICLES * 3);
-jetGeo.setAttribute('position', new THREE.BufferAttribute(jetPositions, 3));
-const jetMat = new THREE.PointsMaterial({
-  color: 0xaaaaaa, size: 0.18, transparent: true, opacity: 0.7,
-  depthWrite: false, sizeAttenuation: true,
-});
-const jetPoints = new THREE.Points(jetGeo, jetMat);
-jetPoints.frustumCulled = false;
-scene.add(jetPoints);
-
-function updateJetParticles(dt, thrusting, ballPos) {
-  // Emit new particles while thrusting
-  if (thrusting) {
-    const emitCount = 3;
-    for (let i = 0; i < emitCount; i++) {
-      if (jetParticles.length >= JET_MAX_PARTICLES) break;
-      jetParticles.push({
-        pos: new THREE.Vector3(
-          ballPos.x + (Math.random() - 0.5) * 0.2,
-          ballPos.y - 0.4,
-          ballPos.z + (Math.random() - 0.5) * 0.2
-        ),
-        vel: new THREE.Vector3(
-          (Math.random() - 0.5) * 1.5,
-          -3 - Math.random() * 3,
-          (Math.random() - 0.5) * 1.5
-        ),
-        life: 0, maxLife: 0.3 + Math.random() * 0.25,
-      });
-    }
-  }
-
-  // Update existing particles
-  for (let i = jetParticles.length - 1; i >= 0; i--) {
-    const p = jetParticles[i];
-    p.life += dt;
-    if (p.life >= p.maxLife) { jetParticles.splice(i, 1); continue; }
-    p.pos.addScaledVector(p.vel, dt);
-    p.vel.y -= 2 * dt; // slight drag/gravity on smoke
-  }
-
-  // Write to buffer (pad remainder with NaN to hide unused slots)
-  for (let i = 0; i < JET_MAX_PARTICLES; i++) {
-    const base = i * 3;
-    if (i < jetParticles.length) {
-      const p = jetParticles[i];
-      jetPositions[base]     = p.pos.x;
-      jetPositions[base + 1] = p.pos.y;
-      jetPositions[base + 2] = p.pos.z;
-      // Fade out by shrinking — done via opacity trick on material; here just keep all same
-    } else {
-      jetPositions[base] = jetPositions[base+1] = jetPositions[base+2] = Infinity;
-    }
-  }
-  jetGeo.attributes.position.needsUpdate = true;
-  // Fade material opacity based on whether thrusting
-  jetMat.opacity = thrusting ? 0.7 : Math.max(0, jetMat.opacity - dt * 3);
-}
-
 buildStage();
 spawnPowerups();
-
-// ── ICYHOT GOAL ───────────────────────────────────────────────────────────────
-const ICYHOT_FLOAT_Y   = 5.0;    // units above stage
-const ICYHOT_ATTRACT_R = 10.0;   // radius within which it moves toward player
-const ICYHOT_SPEED     = 1.5;    // units/s toward player
-const ICYHOT_COLLECT_R = 1.0;    // collection distance
-const ICYHOT_RADAR_MAX = 10.0;   // ring starts at this radius
-const ICYHOT_RADAR_SPD = 0.6;    // seconds per radar cycle
-
-// Build icyhot mesh (white cylinder, collidable=false)
-const icyhotGeo = new THREE.CylinderGeometry(0.1, 0.1, 0.5, 16);
-const icyhotMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.2, metalness: 0.6, emissive: 0x88ccff, emissiveIntensity: 0.4 });
-const icyhotMesh = new THREE.Mesh(icyhotGeo, icyhotMat);
-icyhotMesh.castShadow = true;
-icyhotMesh.userData.collidable = false;
-
-let icyhotActive  = false;   // false until placed by spawnIcyhot
-let icyhotPos     = new THREE.Vector3(); // stage-local position
-let icyhotRadarT  = 0;       // radar animation timer [0,1)
-let icyhotCollected = false;
-
-const radarCanvas = document.getElementById('radar-canvas');
-const radarCtx    = radarCanvas.getContext('2d');
-const flashEl     = document.getElementById('collect-flash');
-
-function resizeRadarCanvas() {
-  radarCanvas.width  = window.innerWidth;
-  radarCanvas.height = window.innerHeight;
-}
-resizeRadarCanvas();
-window.addEventListener('resize', resizeRadarCanvas);
-
-function spawnIcyhot() {
-  stageGroup.remove(icyhotMesh); // ensure not double-added
-  icyhotPos.set(0, ICYHOT_FLOAT_Y, ZF - 5);
-  icyhotMesh.position.copy(icyhotPos);
-  icyhotMesh.visible  = true;
-  icyhotActive        = true;
-  icyhotCollected     = false;
-  icyhotRadarT        = 0;
-  stageGroup.add(icyhotMesh);
-}
-
-function collectIcyhot() {
-  icyhotActive    = false;
-  stageGroup.remove(icyhotMesh);
-  icyhotCollected = true;
-  // White flash
-  flashEl.style.transition = 'none';
-  flashEl.style.opacity = '1';
-  requestAnimationFrame(() => {
-    flashEl.style.transition = 'opacity 0.6s ease-out';
-    flashEl.style.opacity = '0';
-  });
-  // TODO: trigger next level here
-}
-
-function updateIcyhot(dt, ballLocalPos) {
-  if (!icyhotActive) { radarCtx.clearRect(0, 0, radarCanvas.width, radarCanvas.height); return; }
-
-  // Slowly rotate
-  icyhotMesh.rotation.y += dt * 0.8;
-  icyhotMesh.rotation.z += dt * 0.3;
-
-  // Hover bob
-  icyhotMesh.position.y = icyhotPos.y + Math.sin(performance.now() * 0.001) * 0.15;
-
-  // Move toward player in full 3D when within attract radius
-  const dx   = ballLocalPos.x - icyhotPos.x;
-  const dy   = ballLocalPos.y - icyhotPos.y;
-  const dz   = ballLocalPos.z - icyhotPos.z;
-  const dist3 = Math.sqrt(dx*dx + dy*dy + dz*dz);
-  if (dist3 < ICYHOT_ATTRACT_R && dist3 > 0.01) {
-    const move = Math.min(ICYHOT_SPEED * dt, dist3);
-    icyhotPos.x += (dx / dist3) * move;
-    icyhotPos.y += (dy / dist3) * move;
-    icyhotPos.z += (dz / dist3) * move;
-    icyhotMesh.position.copy(icyhotPos);
-  }
-
-  // Check collection (3D distance to ball world pos)
-  stageGroup.updateMatrixWorld(true);
-  const icyhotWorld = new THREE.Vector3();
-  icyhotMesh.getWorldPosition(icyhotWorld);
-  if (pos.distanceTo(icyhotWorld) < ICYHOT_COLLECT_R) {
-    collectIcyhot();
-    return;
-  }
-
-  // ── Radar ring (2D canvas) ────────────────────────────────────────────────
-  icyhotRadarT = (icyhotRadarT + dt / ICYHOT_RADAR_SPD) % 1.0;
-
-  // Project icyhot world position to screen
-  const projected = icyhotWorld.clone().project(camera);
-  const sx = ( projected.x * 0.5 + 0.5) * radarCanvas.width;
-  const sy = (-projected.y * 0.5 + 0.5) * radarCanvas.height;
-  const behindCamera = projected.z > 1.0;
-
-  radarCtx.clearRect(0, 0, radarCanvas.width, radarCanvas.height);
-  if (behindCamera) return;
-
-  // Ring shrinks from ICYHOT_RADAR_MAX px-equivalent toward the object
-  // We scale radar units to screen pixels using a rough projection scale
-  const scale = radarCanvas.height / 2; // rough world→screen scale at unit depth
-  const camDist = icyhotWorld.distanceTo(camera.position);
-  const pxPerUnit = scale / Math.max(camDist, 1);
-
-  const maxR = ICYHOT_RADAR_MAX * pxPerUnit;
-  const minR = 8; // minimum ring radius in px (near the object itself)
-  const t    = icyhotRadarT; // 0=large, 1=small
-  const ringR = maxR * (1 - t) + minR * t;
-  const alpha = 0.15 + 0.5 * t; // fades in as it shrinks
-
-  radarCtx.beginPath();
-  radarCtx.arc(sx, sy, ringR, 0, Math.PI * 2);
-  radarCtx.strokeStyle = `rgba(100, 210, 255, ${alpha})`;
-  radarCtx.lineWidth   = 2.5;
-  radarCtx.stroke();
-}
-
-spawnIcyhot();
 
 // ── PHYSICS STATE ─────────────────────────────────────────────────────────────
 let pos    = new THREE.Vector3(0, BASE.radius, 0);
@@ -1180,7 +615,8 @@ const CAM_POL_DEFAULT = 0.85;
 const CAM_POL_HIGH    = 0.15;
 const CAM_POL_LOW     = 1.35;
 
-// ── GAME MODE (declared early — used in spawnPowerups) ───────────────────────
+// ── GAME MODE ─────────────────────────────────────────────────────────────────
+let gameMode = 'menu';
 let menuAngle = 0;
 
 const menuEl    = document.getElementById('menu');
@@ -1197,55 +633,7 @@ function enterGame(mode) {
   pos.set(0, BASE.radius, 0); vel.set(0,0,0); angVel.set(0,0,0);
   orient.identity(); tiltX = tiltZ = 0;
   camAzimuth = Math.PI; camPolar = CAM_POL_DEFAULT;
-  labPanel.style.display = mode === 'test' ? 'block' : 'none';
-  resetEffects();
-  refreshLabPanel();
-  if (mode === 'test') { buildTestLab(); }
-  else                 { buildStage(); spawnPowerups(); spawnIcyhot(); }
 }
-
-const labPanel = document.getElementById('lab-panel');
-
-// Lab panel toggle logic
-document.querySelectorAll('.lab-toggle').forEach(row => {
-  const key = row.dataset.fx;
-  if (!key) return; // prop buttons have no data-fx, skip
-  const pip = row.querySelector('.lab-pip');
-  function refresh() {
-    const on = !!fx[key];
-    if (pip) { pip.style.opacity = on ? '1' : '0.2'; pip.classList.toggle('on', on); }
-  }
-  row.addEventListener('click', () => {
-    if (key === 'hasJetpack' && !fx.hasJetpack) {
-      fx.hasJetpack = true;
-      jetpackFuel = JETPACK_MAX;
-    } else {
-      fx[key] = !fx[key];
-      if (key === 'hasJetpack') jetpackFuel = 0;
-    }
-    applyEffects();
-    updateHUD();
-    refresh();
-  });
-  refresh();
-});
-
-function refreshLabPanel() {
-  document.querySelectorAll('.lab-toggle').forEach(row => {
-    const key = row.dataset.fx;
-    if (!key) return;
-    const pip = row.querySelector('.lab-pip');
-    if (!pip) return;
-    pip.style.opacity = fx[key] ? '1' : '0.2';
-    pip.classList.toggle('on', !!fx[key]);
-  });
-}
-
-// Lab prop buttons
-document.getElementById('prop-clear').addEventListener('click', clearLabProps);
-document.querySelectorAll('[data-prop]').forEach(row => {
-  row.addEventListener('click', () => spawnLabProp(row.dataset.prop));
-});
 
 document.getElementById('btn-play').addEventListener('click', () => enterGame('play'));
 document.getElementById('btn-test').addEventListener('click', () => enterGame('test'));
@@ -1266,9 +654,8 @@ function reset() {
   orient.identity(); tiltX = tiltZ = 0; jumpBuffered = false;
   camAzimuth = Math.PI; camPolar = CAM_POL_DEFAULT;
   resetEffects();
-  refreshLabPanel();
-  if (gameMode === 'test') { buildTestLab(); }
-  else                     { buildStage(); spawnPowerups(); spawnIcyhot(); }
+  buildStage();
+  spawnPowerups();
 }
 
 // ── COLLISION ─────────────────────────────────────────────────────────────────
@@ -1398,13 +785,11 @@ function animate() {
       vel.y += currentJump; onFloor = false; jumpBuffered = false;
     }
   }
-  const jetThrusting = keys['Space'] && !onFloor && fx.hasJetpack && jetpackFuel > 0;
-  if (jetThrusting) {
+  if (keys['Space'] && !onFloor && fx.hasJetpack && jetpackFuel > 0) {
     vel.y += JETPACK_THRUST * dt;
     jetpackFuel = Math.max(0, jetpackFuel - JETPACK_DRAIN * dt);
     updateHUD();
   }
-  updateJetParticles(dt, jetThrusting, pos);
 
   // Track landing moment for refill delay
   if (onFloor && !wasOnFloor) jetpackLandTime = now / 1000;
@@ -1436,14 +821,8 @@ function animate() {
     m.rotation.y += dt * 1.5;
   });
 
-  // Update icyhot goal
-  updateIcyhot(dt, pos);
-
   // Rotate spinners
   spinners.forEach(s => { s.group.rotation.y += s.speed * dt; });
-
-  // Update launchers
-  updateLaunchers(dt, pos);
 
   // Collision
   stageGroup.updateMatrixWorld(true);
@@ -1457,58 +836,7 @@ function animate() {
     const restitution = Math.min(phys.restitution * bouncyMult, 0.99);
 
     pos.addScaledVector(n, depth);
-
-    // ── Surface velocity from spinning props ──────────────────────────────
-    // Walk ancestors to find if this mesh belongs to a spinner or launcher pivot.
-    // Compute the world-space velocity of the contact point on that rotating body.
-    const surfVel = new THREE.Vector3();
-    const contactPt = pos.clone().addScaledVector(n, -currentRadius);
-
-    // Check spinners — they rotate around world Y at group.position
-    for (const sp of spinners) {
-      if (!child.parent) break;
-      // Is this mesh a descendant of sp.group?
-      let node = child;
-      let found = false;
-      while (node) { if (node === sp.group) { found = true; break; } node = node.parent; }
-      if (found) {
-        // ω = sp.speed around world Y axis at sp.group world position
-        const pivot = new THREE.Vector3();
-        sp.group.getWorldPosition(pivot);
-        const r_contact = contactPt.clone().sub(pivot);
-        // surfVel = ω × r  where ω = (0, sp.speed, 0)
-        const omega = new THREE.Vector3(0, sp.speed, 0);
-        surfVel.crossVectors(omega, r_contact);
-        break;
-      }
-    }
-
-    // Check launchers — pivot group rotates around Y at pivot world position
-    if (surfVel.lengthSq() === 0) {
-      for (const la of launchers) {
-        let node = child;
-        let found = false;
-        while (node) { if (node === la.pivot) { found = true; break; } node = node.parent; }
-        if (found) {
-          // Current angular speed of the pivot (only nonzero during swing/return)
-          let omegaY = 0;
-          if (la.state === 'swing')  omegaY =  LAUNCHER_SWING_SPD;
-          if (la.state === 'return') omegaY = -LAUNCHER_RETURN_SPD;
-          if (omegaY !== 0) {
-            const pivotWorld = new THREE.Vector3();
-            la.pivot.getWorldPosition(pivotWorld);
-            const r_contact = contactPt.clone().sub(pivotWorld);
-            const omega = new THREE.Vector3(0, omegaY, 0);
-            surfVel.crossVectors(omega, r_contact);
-          }
-          break;
-        }
-      }
-    }
-
-    // Relative velocity of ball w.r.t. surface
-    const relVel = vel.clone().sub(surfVel);
-    const vn = relVel.dot(n);
+    const vn = vel.dot(n);
 
     // Bounce pad — preset upward launch regardless of approach velocity
     if (phys.bounceVel && n.y > 0.5) {
@@ -1518,19 +846,15 @@ function animate() {
     }
 
     if (vn < 0) {
-      // Apply impulse in relative frame, then add surface velocity contribution
       vel.addScaledVector(n, -vn * (1 + restitution));
       if (vel.dot(n) < 0.4) vel.addScaledVector(n, -vel.dot(n));
-      // Transfer surface velocity component along normal
-      vel.addScaledVector(n, surfVel.dot(n) * restitution);
     }
     if (n.y > 0.3) onFloor = true;
 
-    // Friction (use relative velocity for slip)
+    // Friction
     const r = n.clone().multiplyScalar(-currentRadius);
-    const ballContactVel = vel.clone().add(new THREE.Vector3().crossVectors(angVel, r));
-    const vSlip = ballContactVel.clone().sub(surfVel)
-      .addScaledVector(n, -ballContactVel.clone().sub(surfVel).dot(n));
+    const vSlip = vel.clone().add(new THREE.Vector3().crossVectors(angVel, r))
+      .addScaledVector(n, -vel.clone().add(new THREE.Vector3().crossVectors(angVel, r)).dot(n));
     const slipSpeed = vSlip.length();
     if (slipSpeed > 1e-5) {
       const I_cur = 0.4 * P.mass * currentRadius * currentRadius;

@@ -66,8 +66,6 @@
 </head>
 <body>
 <canvas id="c"></canvas>
-<canvas id="radar-canvas" style="position:fixed;top:0;left:0;pointer-events:none;z-index:10;"></canvas>
-<div id="collect-flash" style="position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:20;opacity:0;background:white;transition:opacity 0.05s;"></div>
 <div id="title">SHAQBALL 3D</div>
 <div id="controls">WASD tilt &nbsp;|&nbsp; ← → ↑ ↓ orbit camera &nbsp;|&nbsp; SPACE jump &nbsp;|&nbsp; R reset &nbsp;|&nbsp; TAB diag</div>
 <div id="hud" style="position:fixed;top:16px;right:16px;font-family:monospace;font-size:13px;text-align:right;pointer-events:none;line-height:2;"></div>
@@ -220,7 +218,7 @@ function spawnPowerups() {
 // ── MATERIALS ─────────────────────────────────────────────────────────────────
 const MATERIALS = {
   default: {
-    friction: 0.6, restitution: 0.55, rollingResist: 0.1,
+    friction: 0.6, restitution: 0.55, rollingResist: 0.1, density: 2.0,
     appearance: {
       color: 0xffffff, roughness: 0.8, metalness: 0.1,
       texture(ctx, s) {
@@ -235,7 +233,7 @@ const MATERIALS = {
     },
   },
   wood: {
-    friction: 0.6, restitution: 0.3, rollingResist: 0.016,
+    friction: 0.6, restitution: 0.3, rollingResist: 0.016, density: 1.5,
     appearance: {
       color: 0x7a4a28, roughness: 0.9, metalness: 0,
       texture(ctx, s) {
@@ -269,7 +267,7 @@ const MATERIALS = {
     },
   },
   ice: {
-    friction: 0.05, restitution: 0.1, rollingResist: 0.002,
+    friction: 0.05, restitution: 0.1, rollingResist: 0.002, density: 0.9,
     appearance: {
       color: 0xaadeff, roughness: 0.05, metalness: 0.4, transparent: false,
       texture(ctx, s) {
@@ -285,7 +283,7 @@ const MATERIALS = {
     },
   },
   rubber: {
-    friction: 0.9, restitution: 0.665, rollingResist: 0.04,
+    friction: 0.9, restitution: 0.665, rollingResist: 0.04, density: 1.2,
     appearance: {
       color: 0x222222, roughness: 0.95, metalness: 0,
       texture(ctx, s) {
@@ -301,7 +299,7 @@ const MATERIALS = {
     },
   },
   metal: {
-    friction: 0.4, restitution: 0.5, rollingResist: 0.008,
+    friction: 0.4, restitution: 0.5, rollingResist: 0.008, density: 4.0,
     appearance: {
       color: 0x8899aa, roughness: 0.25, metalness: 0.3,
       texture(ctx, s) {
@@ -319,7 +317,7 @@ const MATERIALS = {
     },
   },
   concrete: {
-    friction: 0.7, restitution: 0.2, rollingResist: 0.02,
+    friction: 0.7, restitution: 0.2, rollingResist: 0.02, density: 3.0,
     appearance: {
       color: 0x999999, roughness: 0.95, metalness: 0,
       texture(ctx, s) {
@@ -338,7 +336,7 @@ const MATERIALS = {
     },
   },
   sand: {
-    friction: 0.8, restitution: 0.05, rollingResist: 0.3,
+    friction: 0.8, restitution: 0.05, rollingResist: 0.3, density: 1.6,
     appearance: {
       color: 0xf0d875, roughness: 1.0, metalness: 0,
       texture(ctx, s) {
@@ -352,11 +350,11 @@ const MATERIALS = {
     },
   },
   wall: {
-    friction: 0.5, restitution: 0.3, rollingResist: 0.01,
+    friction: 0.5, restitution: 0.3, rollingResist: 0.01, density: 2.5,
     appearance: { color: 0x0088ff, roughness: 0.3, metalness: 0.6, transparent: true, opacity: 0.45 },
   },
   bouncepad: {
-    friction: 0.4, restitution: 0.1, rollingResist: 0.02,
+    friction: 0.4, restitution: 0.1, rollingResist: 0.02, density: 2.0,
     bounceVel: 25,  // preset upward velocity applied on contact
     appearance: {
       color: 0xffffff, roughness: 0.15, metalness: 0.8,
@@ -818,7 +816,6 @@ function buildTestLab() {
   addToStage(new THREE.BoxGeometry(rampW, rampThick, rampL), 'concrete', {
     position: new THREE.Vector3(0, boxCY, boxCZ),
     rotation: new THREE.Euler(-theta, 0, 0),
-    noJitter: true,
   });
 
   // ── High platform: 20 units long, top surface exactly at platH ──────────
@@ -829,18 +826,15 @@ function buildTestLab() {
   const platW     = 14;
   addToStage(new THREE.BoxGeometry(platW, platThick, platL), 'default', {
     position: new THREE.Vector3(0, platH - platThick / 2, (platZNear + platZFar) / 2),
-    noJitter: true,
   });
 
   // Side rails on platform
   const railH = 1.0, railT = 0.25;
   addToStage(new THREE.BoxGeometry(railT, railH, platL), 'metal', {
     position: new THREE.Vector3(-platW / 2 + railT / 2, platH + railH / 2, (platZNear + platZFar) / 2),
-    noJitter: true,
   });
   addToStage(new THREE.BoxGeometry(railT, railH, platL), 'metal', {
     position: new THREE.Vector3( platW / 2 - railT / 2, platH + railH / 2, (platZNear + platZFar) / 2),
-    noJitter: true,
   });
 
   // ── Prop zone: ground level, square, starts beyond the high platform ─────
@@ -854,7 +848,6 @@ function buildTestLab() {
   // Prop zone floor slab
   addToStage(new THREE.BoxGeometry(propXHalf * 2, 0.1, propZFar - propZNear), 'concrete', {
     position: new THREE.Vector3(0, propFloorY / 2, propZMid),
-    noJitter: true,
   });
 
   // Corner posts
@@ -863,7 +856,6 @@ function buildTestLab() {
    [-propXHalf, propZFar ], [propXHalf, propZFar ]].forEach(([x, z]) => {
     addToStage(new THREE.CylinderGeometry(pR, pR, pH, 8), 'metal', {
       position: new THREE.Vector3(x, pH / 2, z),
-      noJitter: true,
     });
   });
 
@@ -1038,127 +1030,6 @@ function updateJetParticles(dt, thrusting, ballPos) {
 buildStage();
 spawnPowerups();
 
-// ── ICYHOT GOAL ───────────────────────────────────────────────────────────────
-const ICYHOT_FLOAT_Y   = 5.0;    // units above stage
-const ICYHOT_ATTRACT_R = 10.0;   // radius within which it moves toward player
-const ICYHOT_SPEED     = 1.5;    // units/s toward player
-const ICYHOT_COLLECT_R = 1.0;    // collection distance
-const ICYHOT_RADAR_MAX = 10.0;   // ring starts at this radius
-const ICYHOT_RADAR_SPD = 0.6;    // seconds per radar cycle
-
-// Build icyhot mesh (white cylinder, collidable=false)
-const icyhotGeo = new THREE.CylinderGeometry(0.1, 0.1, 0.5, 16);
-const icyhotMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.2, metalness: 0.6, emissive: 0x88ccff, emissiveIntensity: 0.4 });
-const icyhotMesh = new THREE.Mesh(icyhotGeo, icyhotMat);
-icyhotMesh.castShadow = true;
-icyhotMesh.userData.collidable = false;
-
-let icyhotActive  = false;   // false until placed by spawnIcyhot
-let icyhotPos     = new THREE.Vector3(); // stage-local position
-let icyhotRadarT  = 0;       // radar animation timer [0,1)
-let icyhotCollected = false;
-
-const radarCanvas = document.getElementById('radar-canvas');
-const radarCtx    = radarCanvas.getContext('2d');
-const flashEl     = document.getElementById('collect-flash');
-
-function resizeRadarCanvas() {
-  radarCanvas.width  = window.innerWidth;
-  radarCanvas.height = window.innerHeight;
-}
-resizeRadarCanvas();
-window.addEventListener('resize', resizeRadarCanvas);
-
-function spawnIcyhot() {
-  stageGroup.remove(icyhotMesh); // ensure not double-added
-  icyhotPos.set(0, ICYHOT_FLOAT_Y, ZF - 5);
-  icyhotMesh.position.copy(icyhotPos);
-  icyhotMesh.visible  = true;
-  icyhotActive        = true;
-  icyhotCollected     = false;
-  icyhotRadarT        = 0;
-  stageGroup.add(icyhotMesh);
-}
-
-function collectIcyhot() {
-  icyhotActive    = false;
-  stageGroup.remove(icyhotMesh);
-  icyhotCollected = true;
-  // White flash
-  flashEl.style.transition = 'none';
-  flashEl.style.opacity = '1';
-  requestAnimationFrame(() => {
-    flashEl.style.transition = 'opacity 0.6s ease-out';
-    flashEl.style.opacity = '0';
-  });
-  // TODO: trigger next level here
-}
-
-function updateIcyhot(dt, ballLocalPos) {
-  if (!icyhotActive) { radarCtx.clearRect(0, 0, radarCanvas.width, radarCanvas.height); return; }
-
-  // Slowly rotate
-  icyhotMesh.rotation.y += dt * 0.8;
-  icyhotMesh.rotation.z += dt * 0.3;
-
-  // Hover bob
-  icyhotMesh.position.y = icyhotPos.y + Math.sin(performance.now() * 0.001) * 0.15;
-
-  // Move toward player in full 3D when within attract radius
-  const dx   = ballLocalPos.x - icyhotPos.x;
-  const dy   = ballLocalPos.y - icyhotPos.y;
-  const dz   = ballLocalPos.z - icyhotPos.z;
-  const dist3 = Math.sqrt(dx*dx + dy*dy + dz*dz);
-  if (dist3 < ICYHOT_ATTRACT_R && dist3 > 0.01) {
-    const move = Math.min(ICYHOT_SPEED * dt, dist3);
-    icyhotPos.x += (dx / dist3) * move;
-    icyhotPos.y += (dy / dist3) * move;
-    icyhotPos.z += (dz / dist3) * move;
-    icyhotMesh.position.copy(icyhotPos);
-  }
-
-  // Check collection (3D distance to ball world pos)
-  stageGroup.updateMatrixWorld(true);
-  const icyhotWorld = new THREE.Vector3();
-  icyhotMesh.getWorldPosition(icyhotWorld);
-  if (pos.distanceTo(icyhotWorld) < ICYHOT_COLLECT_R) {
-    collectIcyhot();
-    return;
-  }
-
-  // ── Radar ring (2D canvas) ────────────────────────────────────────────────
-  icyhotRadarT = (icyhotRadarT + dt / ICYHOT_RADAR_SPD) % 1.0;
-
-  // Project icyhot world position to screen
-  const projected = icyhotWorld.clone().project(camera);
-  const sx = ( projected.x * 0.5 + 0.5) * radarCanvas.width;
-  const sy = (-projected.y * 0.5 + 0.5) * radarCanvas.height;
-  const behindCamera = projected.z > 1.0;
-
-  radarCtx.clearRect(0, 0, radarCanvas.width, radarCanvas.height);
-  if (behindCamera) return;
-
-  // Ring shrinks from ICYHOT_RADAR_MAX px-equivalent toward the object
-  // We scale radar units to screen pixels using a rough projection scale
-  const scale = radarCanvas.height / 2; // rough world→screen scale at unit depth
-  const camDist = icyhotWorld.distanceTo(camera.position);
-  const pxPerUnit = scale / Math.max(camDist, 1);
-
-  const maxR = ICYHOT_RADAR_MAX * pxPerUnit;
-  const minR = 8; // minimum ring radius in px (near the object itself)
-  const t    = icyhotRadarT; // 0=large, 1=small
-  const ringR = maxR * (1 - t) + minR * t;
-  const alpha = 0.15 + 0.5 * t; // fades in as it shrinks
-
-  radarCtx.beginPath();
-  radarCtx.arc(sx, sy, ringR, 0, Math.PI * 2);
-  radarCtx.strokeStyle = `rgba(100, 210, 255, ${alpha})`;
-  radarCtx.lineWidth   = 2.5;
-  radarCtx.stroke();
-}
-
-spawnIcyhot();
-
 // ── PHYSICS STATE ─────────────────────────────────────────────────────────────
 let pos    = new THREE.Vector3(0, BASE.radius, 0);
 let vel    = new THREE.Vector3();
@@ -1201,7 +1072,7 @@ function enterGame(mode) {
   resetEffects();
   refreshLabPanel();
   if (mode === 'test') { buildTestLab(); }
-  else                 { buildStage(); spawnPowerups(); spawnIcyhot(); }
+  else                 { buildStage(); spawnPowerups(); }
 }
 
 const labPanel = document.getElementById('lab-panel');
@@ -1268,7 +1139,7 @@ function reset() {
   resetEffects();
   refreshLabPanel();
   if (gameMode === 'test') { buildTestLab(); }
-  else                     { buildStage(); spawnPowerups(); spawnIcyhot(); }
+  else                     { buildStage(); spawnPowerups(); }
 }
 
 // ── COLLISION ─────────────────────────────────────────────────────────────────
@@ -1435,9 +1306,6 @@ function animate() {
     m.position.y = 1.5 + Math.sin(now * 0.002 + idx * 1.3) * 0.3;
     m.rotation.y += dt * 1.5;
   });
-
-  // Update icyhot goal
-  updateIcyhot(dt, pos);
 
   // Rotate spinners
   spinners.forEach(s => { s.group.rotation.y += s.speed * dt; });
