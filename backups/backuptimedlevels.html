@@ -7,6 +7,12 @@
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { background: #000; overflow: hidden; font-family: monospace; }
   canvas { display: block; }
+  #title {
+    position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
+    font-size: 28px; font-weight: 900; color: #fff; letter-spacing: 4px;
+    text-shadow: 0 0 20px #0ff, 0 0 40px #0ff; pointer-events: none;
+    display: none;
+  }
   #controls {
     position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
     color: rgba(255,255,255,0.5); font-size: 12px; pointer-events: none;
@@ -15,7 +21,7 @@
   #menu {
     position: fixed; inset: 0; z-index: 200;
     display: flex; flex-direction: column; align-items: center; justify-content: center;
-    background: rgba(0,0,0,0.4);
+    background: rgba(0,0,0,0.6);
     transition: opacity 0.45s;
   }
   #menu.fade { opacity: 0; pointer-events: none; }
@@ -55,108 +61,14 @@
     border: 1px solid rgba(255,255,255,0.3); flex-shrink: 0;
     transition: box-shadow .15s;
   }
-  #shaq-dialog {
-    display: none;
-    position: fixed; inset: 0; z-index: 300;
-    background: rgba(0,0,0,0.72);
-    align-items: flex-end; justify-content: center;
-    padding-bottom: 60px;
-  }
-  #shaq-dialog.active { display: flex; }
-  #shaq-dialog-box {
-    display: flex; gap: 20px; align-items: flex-start;
-    background: rgba(10,10,20,0.95);
-    border: 2px solid rgba(255,255,255,0.25);
-    border-radius: 6px;
-    padding: 20px 24px;
-    max-width: 680px; width: 90%;
-    box-shadow: 0 0 40px rgba(0,200,255,0.15);
-    font-family: monospace;
-  }
-  #shaq-dialog-portrait {
-    width: 80px; height: 80px; flex-shrink: 0;
-    border-radius: 4px;
-    border: 2px solid rgba(255,255,255,0.2);
-    object-fit: cover; object-position: top;
-  }
-  #shaq-dialog-text {
-    display: flex; flex-direction: column; gap: 12px;
-  }
-  #shaq-dialog-name {
-    font-size: 12px; letter-spacing: 3px; color: #44ddff; font-weight: bold;
-  }
-  #shaq-dialog-msg {
-    font-size: 14px; color: #eee; line-height: 1.7; letter-spacing: 0.5px;
-  }
-  #shaq-dialog-hint {
-    font-size: 10px; letter-spacing: 2px; color: rgba(255,255,255,0.3);
-    animation: blink 1.2s step-end infinite;
-  }
-  #gameover {
-    display: none;
-    position: fixed; inset: 0; z-index: 400;
-    flex-direction: column; align-items: center; justify-content: center;
-    background: rgba(0,0,0,0.75);
-    font-family: monospace;
-  }
-  #gameover.active { display: flex; }
-  #gameover-title {
-    font-size: 64px; font-weight: 900; letter-spacing: 8px; color: #fff;
-    text-shadow: 0 0 30px #f44, 0 0 60px #f44;
-    margin-bottom: 10px;
-  }
-  #gameover-sub {
-    font-size: 13px; letter-spacing: 4px; color: rgba(255,255,255,0.4);
-    margin-bottom: 36px;
-  }
-  #gameover-portrait {
-    width: 90px; height: 90px; border-radius: 4px;
-    border: 2px solid rgba(255,255,255,0.2);
-    object-fit: cover; object-position: top;
-    margin-bottom: 24px;
-  }
-  #gameover-score {
-    font-size: 22px; letter-spacing: 3px; color: #44ddff;
-    margin-bottom: 8px;
-  }
-  #gameover-quip {
-    font-size: 12px; color: rgba(255,255,255,0.35); letter-spacing: 2px;
-    margin-bottom: 40px;
-  }
-  #gameover-hint {
-    font-size: 10px; letter-spacing: 3px; color: rgba(255,255,255,0.2);
-    animation: blink 1.2s step-end infinite;
-  }
-  @keyframes blink { 50% { opacity: 0; } }
+  .lab-pip.on { box-shadow: 0 0 6px 2px currentColor; }
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
 <canvas id="radar-canvas" style="position:fixed;top:0;left:0;pointer-events:none;z-index:10;"></canvas>
 <div id="collect-flash" style="position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:20;opacity:0;background:white;transition:opacity 0.05s;"></div>
-<div id="timer-display" style="position:fixed;top:62px;left:50%;transform:translateX(-50%);font-family:monospace;font-weight:900;font-size:42px;pointer-events:none;display:none;text-align:center;background:rgba(0,0,0,0.45);padding:4px 20px;border-radius:4px;"></div>
-
-<div id="shaq-dialog">
-  <div id="shaq-dialog-box">
-    <img id="shaq-dialog-portrait" src="pfp.png" alt="Shaq">
-    <div id="shaq-dialog-text">
-      <div id="shaq-dialog-name">SHAQ</div>
-      <div id="shaq-dialog-msg">HELP! somebody turned my head into a ball. The only thing that can help me get better is LOTS of ICYHOT. You can help me get close to it by tilting the stage!</div>
-      <div id="shaq-dialog-hint">— press any key to continue —</div>
-    </div>
-  </div>
-</div>
-
-<div id="gameover">
-  <div id="gameover-title">GAME OVER</div>
-  <div id="gameover-sub">SHAQ IS STILL IN PAIN</div>
-  <img id="gameover-portrait" src="pfp.png" alt="Shaq">
-  <div id="gameover-score"></div>
-  <div id="gameover-quip"></div>
-  <div id="gameover-stats" style="font-family:monospace;font-size:11px;letter-spacing:2px;color:rgba(255,255,255,0.45);margin-bottom:32px;line-height:2;text-align:center;"></div>
-  <div id="gameover-hint">— press any key to play again —</div>
-</div>
-
+<div id="title">SHAQBALL 3D</div>
 <div id="controls">WASD tilt &nbsp;|&nbsp; ← → ↑ ↓ orbit camera &nbsp;|&nbsp; SPACE jump &nbsp;|&nbsp; R reset &nbsp;|&nbsp; TAB diag</div>
 <div id="hud" style="position:fixed;top:16px;right:16px;font-family:monospace;font-size:13px;text-align:right;pointer-events:none;line-height:2;"></div>
 <div id="lab-panel">
@@ -283,33 +195,21 @@ function resetEffects() {
   updateHUD();
 }
 
-const timerDisplay = document.getElementById('timer-display');
-
 function updateHUD() {
   const lines = [];
   if (gameMode === 'play') lines.push(`<span style="color:#aaddff;font-size:11px;opacity:0.7">LEVEL ${difficulty + 1}</span>`);
+  if (timerActive && gameMode === 'play') {
+    const secs = Math.ceil(stageTimeLeft);
+    const urgent = stageTimeLeft <= 10;
+    const pulse  = urgent ? `opacity:${0.7 + 0.3 * Math.sin(Date.now() * 0.01)};` : '';
+    const color  = urgent ? '#ff4040' : '#ffffff';
+    lines.push(`<span style="color:${color};font-size:15px;font-weight:bold;${pulse}">${secs}s</span>`);
+  }
   if (fx.sizeUp)     lines.push('<span style="color:#f0c040">⬆ SIZE UP</span>');
   if (fx.bouncyBall) lines.push('<span style="color:#40e0ff">● BOUNCY BALL</span>');
   if (fx.speedUp)    lines.push('<span style="color:#ff6040">⚡ SPEED UP</span>');
   hud.innerHTML = lines.join('<br>');
   if (fx.hasJetpack) fuelBar.style.width = (jetpackFuel / JETPACK_MAX * 100) + '%';
-  updateTimerDisplay();
-}
-
-function updateTimerDisplay() {
-  if (!timerActive || gameMode !== 'play') {
-    timerDisplay.style.display = 'none';
-    return;
-  }
-  const secs   = Math.ceil(stageTimeLeft);
-  const urgent = stageTimeLeft <= 10;
-  timerDisplay.style.display  = 'block';
-  timerDisplay.style.color    = urgent ? '#ff4040' : '#ffffff';
-  timerDisplay.style.textShadow = urgent
-    ? '0 0 20px #ff0000, 0 0 40px #ff0000'
-    : '0 0 16px rgba(255,255,255,0.4)';
-  timerDisplay.style.opacity  = urgent ? (0.7 + 0.3 * Math.sin(Date.now() * 0.01)).toFixed(2) : '1';
-  timerDisplay.textContent    = secs + 's';
 }
 
 // Powerup definitions
@@ -1033,7 +933,7 @@ function buildStage() {
 
   // (dynZF already computed above for floor rebuild)
   // Obstacle count multiplier
-  const obsMult  = 0.85 + d * 0.25;
+  const obsMult  = 1 + d * 0.25;
   // Ice/sand mix: 0 = all default/wood, 1 = heavy ice/sand
   const iceMix   = Math.min(d * 0.12, 0.7);
   // Powerup frequency: starts at 1.0, drops by 0.08 per level, floor 0.2
@@ -1226,9 +1126,8 @@ const ICYHOT_RADAR_MAX = 10.0;   // ring starts at this radius
 const ICYHOT_RADAR_SPD = 0.6;    // seconds per radar cycle
 
 // Build icyhot mesh (white cylinder, collidable=false)
-const icyhotGeo = new THREE.CylinderGeometry(0.22, 0.22, 0.8, 32);
-const icyhotTex = new THREE.TextureLoader().load('icyhot.png');
-const icyhotMat = new THREE.MeshStandardMaterial({ map: icyhotTex, roughness: 0.2, metalness: 0.3, emissive: 0x88ccff, emissiveIntensity: 0.8 });
+const icyhotGeo = new THREE.CylinderGeometry(0.1, 0.1, 0.5, 16);
+const icyhotMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.2, metalness: 0.6, emissive: 0x88ccff, emissiveIntensity: 0.4 });
 const icyhotMesh = new THREE.Mesh(icyhotGeo, icyhotMat);
 icyhotMesh.castShadow = true;
 icyhotMesh.userData.collidable = false;
@@ -1237,7 +1136,6 @@ let icyhotActive  = false;   // false until placed by spawnIcyhot
 let icyhotPos     = new THREE.Vector3(); // stage-local position
 let icyhotRadarT  = 0;       // radar animation timer [0,1)
 let icyhotCollected = false;
-let levelJustAdvanced = false; // suppress floor velocity correction for one frame after level change
 
 const radarCanvas = document.getElementById('radar-canvas');
 const radarCtx    = radarCanvas.getContext('2d');
@@ -1275,28 +1173,18 @@ function collectIcyhot() {
   });
   // Advance difficulty and rebuild
   difficulty++;
-  levelJustAdvanced = true;
   resetEffects();
   buildStage();
   spawnPowerups();
   // Reset ball position and velocity
-  pos.set(0, BASE.radius + 1, 0);
+  pos.set(0, BASE.radius, 0);
   vel.set(0, 0, 0);
   angVel.set(0, 0, 0);
   orient.identity();
   tiltX = tiltZ = 0;
-  camAzimuth = Math.PI; camPolar = CAM_POL_DEFAULT;
-  snapCamera();
   spawnIcyhot();
   startTimer();
   updateHUD();
-  // Show dialog after level 1 (difficulty just became 1)
-  if (difficulty === 1) {
-    requestAnimationFrame(() => showShaqDialog(() => {}, {
-      portrait: 'shaq.png',
-      message: 'Hurry, time is running out!'
-    }));
-  }
 }
 
 function updateIcyhot(dt, ballLocalPos) {
@@ -1368,15 +1256,6 @@ let vel    = new THREE.Vector3();
 let angVel = new THREE.Vector3();
 let orient = new THREE.Quaternion();
 let onFloor = false;
-
-// ── RUN STATS ─────────────────────────────────────────────────────────────────
-let statMaxY        = 0;
-let statMaxSpeed    = 0;
-let statDistRolled  = 0;
-let statJumps       = 0;
-let statPowerups    = 0;
-let statMaxAirtime  = 0;
-let statAirtimeStart = 0; // timestamp when ball left floor
 let tiltX = 0, tiltZ = 0;
 let jumpBuffered = false;
 let jumpBufferTime = 0;
@@ -1396,31 +1275,19 @@ const CAM_POL_LOW     = 1.35;
 let menuAngle = 0;
 
 const menuEl    = document.getElementById('menu');
+const titleEl   = document.getElementById('title');
 const controlsEl = document.getElementById('controls');
 
-function snapCamera() {
-  const sx = pos.x + CAM_DIST * Math.sin(camPolar) * Math.sin(camAzimuth);
-  const sy = pos.y + CAM_DIST * Math.cos(camPolar);
-  const sz = pos.z + CAM_DIST * Math.sin(camPolar) * Math.cos(camAzimuth);
-  camera.position.set(sx, sy, sz);
-}
-
-function resetStats() {
-  statMaxY = 0; statMaxSpeed = 0; statDistRolled = 0;
-  statJumps = 0; statPowerups = 0; statMaxAirtime = 0; statAirtimeStart = 0;
-}
-
 function enterGame(mode) {
-  resetStats();
   gameMode = mode;
   menuEl.classList.add('fade');
   setTimeout(() => { menuEl.style.display = 'none'; }, 460);
+  titleEl.style.display = 'block';
   controlsEl.style.display = 'block';
   ballMesh.visible = true;
-  pos.set(0, BASE.radius + 1, 0); vel.set(0,0,0); angVel.set(0,0,0);
+  pos.set(0, BASE.radius, 0); vel.set(0,0,0); angVel.set(0,0,0);
   orient.identity(); tiltX = tiltZ = 0;
   camAzimuth = Math.PI; camPolar = CAM_POL_DEFAULT;
-  snapCamera();
   labPanel.style.display = mode === 'test' ? 'block' : 'none';
   debugAdvanceEl.style.display = mode === 'play' ? 'block' : 'none';
   resetEffects();
@@ -1472,83 +1339,7 @@ document.querySelectorAll('[data-prop]').forEach(row => {
   row.addEventListener('click', () => spawnLabProp(row.dataset.prop));
 });
 
-// ── GAME OVER ─────────────────────────────────────────────────────────────────
-const gameoverEl       = document.getElementById('gameover');
-const gameoverScoreEl  = document.getElementById('gameover-score');
-const gameoverQuipEl   = document.getElementById('gameover-quip');
-const gameoverStatsEl  = document.getElementById('gameover-stats');
-const gameoverPortrait = document.getElementById('gameover-portrait');
-
-const GAMEOVER_QUIPS = [
-  [ 0, "Shaq felt nothing. Not even a tingle."],
-  [ 1, "One IcyHot. It helped a little. His pinky toe."],
-  [ 3, "Getting warmer. And cooler. Simultaneously."],
-  [ 6, "Shaq is impressed. His knees are not."],
-  [10, "LEGENDARY. Shaq may consider leaving the ball."],
-];
-
-function showGameOver() {
-  const collected = difficulty;
-  const quip = [...GAMEOVER_QUIPS].reverse().find(([min]) => collected >= min)?.[1] ?? '';
-  gameoverScoreEl.textContent  = `You got ${collected} IcyHot${collected !== 1 ? 's' : ''}`;
-  gameoverQuipEl.textContent   = quip;
-  gameoverPortrait.src         = collected >= 3 ? 'shaq.png' : 'pfp.png';
-  gameoverStatsEl.innerHTML = [
-    ['MAX VERTICAL',    `${statMaxY.toFixed(1)}u`],
-    ['LONGEST AIRTIME', `${statMaxAirtime.toFixed(2)}s`],
-    ['TOP SPEED',       `${statMaxSpeed.toFixed(1)}u/s`],
-    ['DISTANCE ROLLED', `${statDistRolled.toFixed(0)}u`],
-    ['JUMPS',           `${statJumps}`],
-    ['POWER-UPS',       `${statPowerups}`],
-  ].map(([k,v]) => `<span style="color:rgba(255,255,255,0.25)">${k}</span> &nbsp; <span style="color:rgba(255,255,255,0.7)">${v}</span>`).join('<br>');
-  gameoverEl.classList.add('active');
-  dialogPaused = true;
-  function dismiss() {
-    gameoverEl.classList.remove('active');
-    dialogPaused = false;
-    window.removeEventListener('keydown', dismiss);
-    gameoverEl.removeEventListener('click', dismiss);
-    menuEl.style.display = 'none';
-    enterGame('play');
-    requestAnimationFrame(() => showShaqDialog(() => {}));
-  }
-  setTimeout(() => {
-    window.addEventListener('keydown', dismiss);
-    gameoverEl.addEventListener('click', dismiss);
-  }, 400);
-}
-
-// ── SHAQ DIALOG ───────────────────────────────────────────────────────────────
-const shaqDialog = document.getElementById('shaq-dialog');
-const shaqPortrait = document.getElementById('shaq-dialog-portrait');
-const shaqMsg      = document.getElementById('shaq-dialog-msg');
-let dialogPaused = false;
-
-function showShaqDialog(onDismiss, { portrait = 'pfp.png', message = '' } = {}) {
-  shaqPortrait.src = portrait;
-  if (message) shaqMsg.textContent = message;
-  shaqDialog.classList.add('active');
-  dialogPaused = true;
-  function dismiss(e) {
-    shaqDialog.classList.remove('active');
-    dialogPaused = false;
-    window.removeEventListener('keydown', dismiss);
-    shaqDialog.removeEventListener('click', dismiss);
-    onDismiss();
-  }
-  // slight delay so the keydown that clicked play doesn't immediately dismiss
-  setTimeout(() => {
-    window.addEventListener('keydown', dismiss);
-    shaqDialog.addEventListener('click', dismiss);
-  }, 200);
-}
-
-document.getElementById('btn-play').addEventListener('click', () => {
-  menuEl.classList.add('fade');
-  setTimeout(() => { menuEl.style.display = 'none'; }, 460);
-  enterGame('play');
-  requestAnimationFrame(() => showShaqDialog(() => {}));
-});
+document.getElementById('btn-play').addEventListener('click', () => enterGame('play'));
 document.getElementById('btn-test').addEventListener('click', () => enterGame('test'));
 
 // Debug: advance level button
@@ -1567,11 +1358,9 @@ window.addEventListener('keydown', e => {
 window.addEventListener('keyup', e => { keys[e.code] = false; });
 
 function reset() {
-  pos.set(0, BASE.radius + 1, 0); vel.set(0,0,0); angVel.set(0,0,0);
+  pos.set(0, BASE.radius, 0); vel.set(0,0,0); angVel.set(0,0,0);
   orient.identity(); tiltX = tiltZ = 0; jumpBuffered = false;
-  levelJustAdvanced = true;
   camAzimuth = Math.PI; camPolar = CAM_POL_DEFAULT;
-  snapCamera();
   resetEffects();
   refreshLabPanel();
   if (gameMode === 'test') { buildTestLab(); }
@@ -1636,7 +1425,6 @@ let prevTime = performance.now();
 
 function animate() {
   requestAnimationFrame(animate);
-  if (dialogPaused) return;
   const now = performance.now();
   const dt  = Math.min((now - prevTime) / 1000, 0.05);
   prevTime  = now;
@@ -1681,18 +1469,11 @@ function animate() {
   const targetPolar = keys['ArrowDown'] ? CAM_POL_HIGH : keys['ArrowUp'] ? CAM_POL_LOW : CAM_POL_DEFAULT;
   camPolar += (targetPolar - camPolar) * Math.min(1, 12 * dt);
 
-  // Snapshot stage matrix BEFORE tilt for floor velocity calculation
-  levelJustAdvanced = false;
-  stageGroup.updateMatrixWorld(true);
-  const prevStageMat = stageGroup.matrixWorld.clone();
-
   // Stage pivot around ball contact point
   const stageQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(worldTiltX, 0, worldTiltZ, 'XZY'));
   const pivot = new THREE.Vector3(pos.x, pos.y, pos.z);
   stageGroup.position.copy(pivot).sub(pivot.clone().applyQuaternion(stageQuat));
   stageGroup.setRotationFromQuaternion(stageQuat);
-  stageGroup.updateMatrixWorld(true);
-  const currStageMat = stageGroup.matrixWorld.clone();
 
   // Sun tracks ball — shadow frustum stays tight around the player
   sun.position.set(pos.x + 20, pos.y + 40, pos.z + 20);
@@ -1703,16 +1484,7 @@ function animate() {
   // Physics
   const grav = new THREE.Vector3(0, -P.gravity, 0);
   vel.addScaledVector(grav, dt);
-  const prevPos = pos.clone();
   pos.addScaledVector(vel, dt);
-
-  // Track run stats
-  if (gameMode === 'play') {
-    if (pos.y > statMaxY) statMaxY = pos.y;
-    const spd = vel.length();
-    if (spd > statMaxSpeed) statMaxSpeed = spd;
-    statDistRolled += pos.distanceTo(prevPos);
-  }
 
   // Jump / jetpack
   const wasOnFloor = onFloor;
@@ -1720,7 +1492,6 @@ function animate() {
   if (jumpBuffered) {
     if (onFloor) {
       vel.y += currentJump; onFloor = false; jumpBuffered = false;
-      if (gameMode === 'play') { statJumps++; statAirtimeStart = now; }
     }
   }
   const jetThrusting = keys['Space'] && !onFloor && fx.hasJetpack && jetpackFuel > 0;
@@ -1732,14 +1503,7 @@ function animate() {
   updateJetParticles(dt, jetThrusting, pos);
 
   // Track landing moment for refill delay
-  if (onFloor && !wasOnFloor) {
-    jetpackLandTime = now / 1000;
-    if (gameMode === 'play' && statAirtimeStart > 0) {
-      const airtime = (now - statAirtimeStart) / 1000;
-      if (airtime > statMaxAirtime) statMaxAirtime = airtime;
-      statAirtimeStart = 0;
-    }
-  }
+  if (onFloor && !wasOnFloor) jetpackLandTime = now / 1000;
 
   // Refill after 2s on ground
   if (fx.hasJetpack && onFloor && jetpackFuel < JETPACK_MAX) {
@@ -1758,7 +1522,6 @@ function animate() {
       POWERUP_DEFS[m.userData.powerupType].onPickup();
       stageGroup.remove(m);
       powerupMeshes.splice(i, 1);
-      if (gameMode === 'play') statPowerups++;
       updateHUD();
     }
   }
@@ -1776,11 +1539,10 @@ function animate() {
     if (stageTimeLeft <= 0) {
       stageTimeLeft = 0;
       timerActive   = false;
-      timerDisplay.style.display = 'none';
-      showGameOver();
+      reset();
       return;
     }
-    updateTimerDisplay();
+    updateHUD();
   }
 
   updateIcyhot(dt, pos);
@@ -1854,18 +1616,6 @@ function animate() {
 
     // Relative velocity of ball w.r.t. surface
     const relVel = vel.clone().sub(surfVel);
-
-    // Subtract floor velocity due to stage tilt this frame.
-    // Compute where the contact point was before and after the tilt update.
-    const contactPtWorld = pos.clone().addScaledVector(n, -currentRadius);
-    const stageMatInv = new THREE.Matrix4().copy(prevStageMat).invert();
-    const localContact = contactPtWorld.clone().applyMatrix4(stageMatInv);
-    const prevWorld = localContact.clone().applyMatrix4(prevStageMat);
-    const currWorld = localContact.clone().applyMatrix4(currStageMat);
-    const floorVelAtContact = currWorld.sub(prevWorld).divideScalar(Math.max(dt, 1e-6));
-    if (levelJustAdvanced) floorVelAtContact.set(0, 0, 0);
-    relVel.sub(floorVelAtContact);
-
     const vn = relVel.dot(n);
 
     // Bounce pad — preset upward launch regardless of approach velocity
@@ -1881,10 +1631,8 @@ function animate() {
       if (vel.dot(n) < 0.4) vel.addScaledVector(n, -vel.dot(n));
       // Transfer surface velocity component along normal
       vel.addScaledVector(n, surfVel.dot(n) * restitution);
-      // Cap outgoing vertical velocity to prevent bouncyball runaway
-      if (vel.y > 22) vel.y = 22;
     }
-    if (n.y > 0.643) onFloor = true;
+    if (n.y > 0.3) onFloor = true;
 
     // Friction (use relative velocity for slip)
     const r = n.clone().multiplyScalar(-currentRadius);
@@ -1911,7 +1659,7 @@ function animate() {
     }
   });
 
-  if (pos.y < -15) { showGameOver(); return; }
+  if (pos.y < -15) { reset(); return; }
 
   // Orientation
   const wLen = angVel.length();
