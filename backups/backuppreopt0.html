@@ -177,14 +177,6 @@
     <div class="lab-pip" style="color:#80ff80;background:#80ff80;"></div>
     <span>Jetpack</span>
   </div>
-  <div class="lab-toggle" data-fx="magnet">
-    <div class="lab-pip" style="color:#ff44cc;background:#ff44cc;"></div>
-    <span>Magnet</span>
-  </div>
-  <div class="lab-toggle" data-fx="lowGravity">
-    <div class="lab-pip" style="color:#ffff00;background:#ffff00;"></div>
-    <span>Low Gravity</span>
-  </div>
   <h3 style="margin-top:16px;">Props</h3>
   <div class="lab-toggle" id="prop-clear" style="color:rgba(255,100,100,0.7);">
     <span>Clear props</span>
@@ -204,7 +196,9 @@
   <div id="menu-hint">TAB — diagnostics &nbsp;&nbsp;|&nbsp;&nbsp; R — reset in game</div>
 </div>
 
-
+<div id="debug-advance" style="display:none;position:fixed;bottom:16px;left:16px;z-index:50;">
+  <button id="btn-advance" style="background:rgba(255,80,80,0.2);border:1px solid rgba(255,80,80,0.5);color:rgba(255,80,80,0.9);font-family:monospace;font-size:11px;padding:6px 12px;cursor:pointer;letter-spacing:1px;">⏩ NEXT LEVEL [DEBUG]</button>
+</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script>
@@ -248,7 +242,7 @@ function startTimer() {
 }
 
 // ── POWERUP STATE ─────────────────────────────────────────────────────────────
-const fx = { sizeUp: false, bouncyBall: false, speedUp: false, hasJetpack: false, magnet: false, lowGravity: false };
+const fx = { sizeUp: false, bouncyBall: false, speedUp: false, hasJetpack: false };
 let   currentRadius = BASE.radius;
 let   currentJump   = BASE.jumpSpeed;
 let   bouncyMult    = 1.0;
@@ -276,15 +270,14 @@ const fuelBar = document.getElementById('fuelBar');
 function applyEffects() {
   currentRadius = BASE.radius * (fx.sizeUp ? 1.5 : 1);
   currentJump   = BASE.jumpSpeed * (fx.sizeUp ? 1.5 : 1) * (fx.speedUp ? 2.0 : 1);
-  P.gravity     = BASE.gravity   * (fx.speedUp ? 1.8 : 1) * (fx.lowGravity ? 0.5 : 1);
-  _gravVec.y    = -P.gravity;
+  P.gravity     = BASE.gravity   * (fx.speedUp ? 1.8 : 1);
   bouncyMult    = fx.bouncyBall ? 1.6 : 1.0;
   ballMesh.scale.setScalar(currentRadius / BASE.radius);
   fuelMeter.style.display = fx.hasJetpack ? 'block' : 'none';
 }
 
 function resetEffects() {
-  fx.sizeUp = false; fx.bouncyBall = false; fx.speedUp = false; fx.hasJetpack = false; fx.magnet = false; fx.lowGravity = false;
+  fx.sizeUp = false; fx.bouncyBall = false; fx.speedUp = false; fx.hasJetpack = false;
   jetpackFuel = 0; jetpackLandTime = -999;
   applyEffects();
   updateHUD();
@@ -295,15 +288,9 @@ const timerDisplay = document.getElementById('timer-display');
 function updateHUD() {
   const lines = [];
   if (gameMode === 'play') lines.push(`<span style="color:#aaddff;font-size:11px;opacity:0.7">LEVEL ${difficulty + 1}</span>`);
-  if (lastMatName) {
-    const col = MAT_HUD_COLOR[lastMatName] || '#ffffff';
-    lines.push(`<span style="color:${col};font-size:10px;opacity:0.8;letter-spacing:2px">${lastMatName.toUpperCase()}</span>`);
-  }
   if (fx.sizeUp)     lines.push('<span style="color:#f0c040">⬆ SIZE UP</span>');
   if (fx.bouncyBall) lines.push('<span style="color:#40e0ff">● BOUNCY BALL</span>');
   if (fx.speedUp)    lines.push('<span style="color:#ff6040">⚡ SPEED UP</span>');
-  if (fx.magnet)      lines.push('<span style="color:#ff44cc">🧲 MAGNET</span>');
-  if (fx.lowGravity)  lines.push('<span style="color:#ffff00">🪶 LOW GRAVITY</span>');
   hud.innerHTML = lines.join('<br>');
   if (fx.hasJetpack) fuelBar.style.width = (jetpackFuel / JETPACK_MAX * 100) + '%';
   updateTimerDisplay();
@@ -331,108 +318,10 @@ const POWERUP_DEFS = {
   bouncyball: { color: 0x40e0ff, label: 'B', onPickup() { fx.bouncyBall = true; applyEffects(); } },
   speedup:    { color: 0xff6040, label: '!', onPickup() { fx.speedUp = true; applyEffects(); } },
   jetpack:    { color: 0x80ff80, label: 'J', onPickup() { fx.hasJetpack = true; jetpackFuel = JETPACK_MAX; applyEffects(); } },
-  magnet:      { color: 0xff44cc, label: 'M', onPickup() { fx.magnet = true; applyEffects(); } },
-  lowgravity:  { color: 0xffff00, label: 'G', onPickup() { fx.lowGravity = true; applyEffects(); } },
 };
 
 // Active powerup meshes in the scene (not in stageGroup — they don't tilt)
 const powerupMeshes = [];
-
-function buildPowerupMesh(type, def) {
-  const group = new THREE.Group();
-  const color = def.color;
-  const mat = () => new THREE.MeshStandardMaterial({
-    color, emissive: color, emissiveIntensity: 0.6, roughness: 0.3, metalness: 0.5,
-  });
-
-  if (type === 'bouncyball') {
-    // Simple sphere — original look
-    group.add(new THREE.Mesh(new THREE.SphereGeometry(0.6, 16, 16), mat()));
-
-  } else if (type === 'jetpack') {
-    // Two pill-shaped capsules side by side (cylinder + two sphere caps each)
-    const pillMat = mat();
-    const cH = 0.7, cR = 0.22, capR = 0.22, sep = 0.22;
-    for (const sx of [-sep, sep]) {
-      const pill = new THREE.Group();
-      const body = new THREE.Mesh(new THREE.CylinderGeometry(cR, cR, cH, 12), pillMat);
-      const topCap = new THREE.Mesh(new THREE.SphereGeometry(capR, 12, 8), pillMat);
-      topCap.position.y =  cH / 2;
-      const botCap = new THREE.Mesh(new THREE.SphereGeometry(capR, 12, 8), pillMat);
-      botCap.position.y = -cH / 2;
-      pill.add(body, topCap, botCap);
-      pill.position.set(sx, 0, 0);
-      group.add(pill);
-    }
-
-  } else if (type === 'speedup') {
-    // Three forward-pointing chevrons stacked along Z
-    const m = mat();
-    for (let i = 0; i < 3; i++) {
-      const shape = new THREE.Shape();
-      shape.moveTo(0,  0.45);
-      shape.lineTo(0.38, -0.3);
-      shape.lineTo(0.18, -0.3);
-      shape.lineTo(0,  0.1);
-      shape.lineTo(-0.18, -0.3);
-      shape.lineTo(-0.38, -0.3);
-      shape.closePath();
-      const geo = new THREE.ExtrudeGeometry(shape, { depth: 0.12, bevelEnabled: false });
-      const arrow = new THREE.Mesh(geo, m);
-      arrow.position.set(0, 0, (i - 1) * 0.3);
-      arrow.rotation.x = -Math.PI / 2;
-      // Offset so extrude depth centers on XZ plane
-      arrow.position.y = -0.06;
-      group.add(arrow);
-    }
-
-  } else if (type === 'magnet') {
-    // Half-torus (horseshoe magnet shape)
-    const m = mat();
-    const torus = new THREE.Mesh(
-      new THREE.TorusGeometry(0.42, 0.18, 12, 24, Math.PI),
-      m
-    );
-    torus.rotation.x = Math.PI / 2;
-    group.add(torus);
-    // Two pole tips (short cylinders at each end of the half-torus)
-    for (const side of [-1, 1]) {
-      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 0.6, 10), m);
-      pole.rotation.x = Math.PI / 2;
-      pole.position.set(side * 0.42, 0, -0.16);
-      group.add(pole);
-    }
-
-  } else if (type === 'lowgravity') {
-    // Feather: a thin tapered ellipse quill with angled barb lines
-    const m = mat();
-    // Quill shaft — thin tall box
-    const shaft = new THREE.Mesh(new THREE.BoxGeometry(0.06, 1.0, 0.06), m);
-    group.add(shaft);
-    // Vane — flattened ellipsoid standing upright
-    const vane = new THREE.Mesh(new THREE.SphereGeometry(1, 10, 10), m);
-    vane.scale.set(0.22, 0.52, 0.04);
-    vane.position.y = 0.1;
-    group.add(vane);
-    // Barb lines — thin boxes angled outward from shaft
-    for (let i = 0; i < 5; i++) {
-      const t = (i / 4) - 0.5; // -0.5 to 0.5
-      for (const side of [-1, 1]) {
-        const barb = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.03, 0.03), m);
-        barb.position.set(side * 0.09, t * 0.44, 0);
-        barb.rotation.z = side * 0.4;
-        group.add(barb);
-      }
-    }
-
-  } else {
-    // Fallback sphere for any unknown type
-    group.add(new THREE.Mesh(new THREE.SphereGeometry(0.6, 12, 12), mat()));
-  }
-
-  group.traverse(child => { if (child.isMesh) child.castShadow = true; });
-  return group;
-}
 
 function spawnPowerups() {
   // No pickups in test lab — powerups are toggled via the side panel
@@ -447,29 +336,20 @@ function spawnPowerups() {
   for (let i = 0; i < count; i++) {
     const type = rngItem(types);
     const def  = POWERUP_DEFS[type];
-    const group = buildPowerupMesh(type, def);
-    group.position.set(rngRange(-W+2, W-2), 1.5, rngRange(P.startClear, ZF-5));
-    group.userData.powerupType = type;
-    group.userData.collidable = false;
-    stageGroup.add(group);
-    powerupMeshes.push(group);
+    const geo  = new THREE.SphereGeometry(0.6, 12, 12);
+    const mat  = new THREE.MeshStandardMaterial({ color: def.color, emissive: def.color, emissiveIntensity: 0.6, roughness: 0.3, metalness: 0.5 });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(rngRange(-W+2, W-2), 1.5, rngRange(P.startClear, ZF-5));
+    mesh.userData.powerupType = type;
+    mesh.userData.collidable = false;
+    mesh.castShadow = true;
+    stageGroup.add(mesh);
+    powerupMeshes.push(mesh);
   }
 }
 
 
-// ── MATERIAL HUD COLORS ───────────────────────────────────────────────────────
-const MAT_HUD_COLOR = {
-  default:   '#c8a070',
-  wood:      '#a0622a',
-  ice:       '#88ddff',
-  rubber:    '#999999',
-  metal:     '#aabbcc',
-  concrete:  '#b0b0b0',
-  sand:      '#e8cc55',
-  wall:      '#44aaff',
-  bouncepad: '#ff6060',
-};
-let lastMatName = null;
+// ── MATERIALS ─────────────────────────────────────────────────────────────────
 const MATERIALS = {
   default: {
     friction: 0.6, restitution: 0.55, rollingResist: 0.1,
@@ -1348,7 +1228,7 @@ const ICYHOT_RADAR_SPD = 0.6;    // seconds per radar cycle
 // Build icyhot mesh (white cylinder, collidable=false)
 const icyhotGeo = new THREE.CylinderGeometry(0.22, 0.22, 0.8, 32);
 const icyhotTex = new THREE.TextureLoader().load('icyhot.png');
-const icyhotMat = new THREE.MeshStandardMaterial({ map: icyhotTex, roughness: 0.2, metalness: 0.3, emissive: 0x5f8fb3, emissiveIntensity: 0.56 });
+const icyhotMat = new THREE.MeshStandardMaterial({ map: icyhotTex, roughness: 0.2, metalness: 0.3, emissive: 0x88ccff, emissiveIntensity: 0.8 });
 const icyhotMesh = new THREE.Mesh(icyhotGeo, icyhotMat);
 icyhotMesh.castShadow = true;
 icyhotMesh.userData.collidable = false;
@@ -1430,14 +1310,12 @@ function updateIcyhot(dt, ballLocalPos) {
   icyhotMesh.position.y = icyhotPos.y + Math.sin(performance.now() * 0.001) * 0.15;
 
   // Move toward player in full 3D when within attract radius
-  const attractR = ICYHOT_ATTRACT_R * (fx.magnet ? 2 : 1);
-  const attractSpd = ICYHOT_SPEED * (fx.magnet ? 2 : 1);
   const dx   = ballLocalPos.x - icyhotPos.x;
   const dy   = ballLocalPos.y - icyhotPos.y;
   const dz   = ballLocalPos.z - icyhotPos.z;
   const dist3 = Math.sqrt(dx*dx + dy*dy + dz*dz);
-  if (dist3 < attractR && dist3 > 0.01) {
-    const move = Math.min(attractSpd * dt, dist3);
+  if (dist3 < ICYHOT_ATTRACT_R && dist3 > 0.01) {
+    const move = Math.min(ICYHOT_SPEED * dt, dist3);
     icyhotPos.x += (dx / dist3) * move;
     icyhotPos.y += (dy / dist3) * move;
     icyhotPos.z += (dz / dist3) * move;
@@ -1445,6 +1323,7 @@ function updateIcyhot(dt, ballLocalPos) {
   }
 
   // Check collection (3D distance to ball world pos)
+  stageGroup.updateMatrixWorld(true);
   const icyhotWorld = new THREE.Vector3();
   icyhotMesh.getWorldPosition(icyhotWorld);
   if (pos.distanceTo(icyhotWorld) < ICYHOT_COLLECT_R) {
@@ -1529,7 +1408,6 @@ function snapCamera() {
 function resetStats() {
   statMaxY = 0; statMaxSpeed = 0; statDistRolled = 0;
   statJumps = 0; statPowerups = 0; statMaxAirtime = 0; statCurAirtime = 0;
-  lastMatName = null;
 }
 
 function enterGame(mode) {
@@ -1544,11 +1422,11 @@ function enterGame(mode) {
   camAzimuth = Math.PI; camPolar = CAM_POL_DEFAULT;
   snapCamera();
   labPanel.style.display = mode === 'test' ? 'block' : 'none';
+  debugAdvanceEl.style.display = mode === 'play' ? 'block' : 'none';
   resetEffects();
   refreshLabPanel();
   if (mode === 'test') { stageGroup.remove(icyhotMesh); icyhotActive = false; buildTestLab(); }
   else                 { difficulty = 0; buildStage(); spawnPowerups(); spawnIcyhot(); startTimer(); }
-  updateHUD();
 }
 
 const labPanel = document.getElementById('lab-panel');
@@ -1632,10 +1510,7 @@ function showGameOver() {
     gameoverEl.removeEventListener('click', dismiss);
     menuEl.style.display = 'none';
     enterGame('play');
-    requestAnimationFrame(() => showShaqDialog(() => {}, {
-      portrait: 'pfp.png',
-      message: 'HELP! somebody turned my head into a ball. The only thing that can help me get better is LOTS of ICYHOT. You can help me get close to it by tilting the stage!'
-    }));
+    requestAnimationFrame(() => showShaqDialog(() => {}));
   }
   setTimeout(() => {
     window.addEventListener('keydown', dismiss);
@@ -1676,6 +1551,10 @@ document.getElementById('btn-play').addEventListener('click', () => {
 });
 document.getElementById('btn-test').addEventListener('click', () => enterGame('test'));
 
+// Debug: advance level button
+const debugAdvanceEl = document.getElementById('debug-advance');
+document.getElementById('btn-advance').addEventListener('click', () => collectIcyhot());
+
 // ── INPUT ─────────────────────────────────────────────────────────────────────
 const keys = {};
 window.addEventListener('keydown', e => {
@@ -1700,67 +1579,19 @@ function reset() {
 }
 
 // ── COLLISION ─────────────────────────────────────────────────────────────────
-// Pre-allocated scratch vectors — never allocated inside the hot path
 const _A = new THREE.Vector3(), _B = new THREE.Vector3(), _C = new THREE.Vector3();
 const _ab = new THREE.Vector3(), _ac = new THREE.Vector3();
-// closestPointOnTri scratch
-const _ap = new THREE.Vector3(), _bp = new THREE.Vector3(), _cp = new THREE.Vector3();
-const _CB = new THREE.Vector3(); // for the B->C edge case
-// sphereMeshCollision scratch
-const _cpOut  = new THREE.Vector3(); // closest point result
-const _diff   = new THREE.Vector3(); // center - cp
-const _bestN  = new THREE.Vector3(); // best normal (copy of _diff/dist)
-// collision response scratch
-const _surfVel       = new THREE.Vector3();
-const _contactPt     = new THREE.Vector3();
-const _pivotWorld    = new THREE.Vector3();
-const _rContact      = new THREE.Vector3();
-const _omega         = new THREE.Vector3();
-const _relVel        = new THREE.Vector3();
-const _contactPtW    = new THREE.Vector3();
-const _localContact  = new THREE.Vector3();
-const _prevWorld     = new THREE.Vector3();
-const _currWorld     = new THREE.Vector3();
-const _floorVel      = new THREE.Vector3();
-const _r             = new THREE.Vector3();
-const _ballCVel      = new THREE.Vector3();
-const _crossTmp      = new THREE.Vector3();
-const _vSlip         = new THREE.Vector3();
-const _vSlipTmp      = new THREE.Vector3();
-const _sd            = new THREE.Vector3();
-const _crossRSd      = new THREE.Vector3();
-const _crossRImp     = new THREE.Vector3();
-// shared hit result object — reused every call, never heap-allocated per call
-const _hitResult     = { normal: _bestN, depth: 0 };
-// gravity vector — updated in applyEffects when P.gravity changes
-const _gravVec       = new THREE.Vector3(0, -25, 0);
-// stage matrix inverse — computed once per frame before collision traverse
-const _stageMatInv   = new THREE.Matrix4();
-// scratch for tilt pivot calculation — avoids clone() per frame
-const _pivotTmp      = new THREE.Vector3();
-// scratch quaternion for orientation update — avoids new Quaternion() per frame
-const _orientQ       = new THREE.Quaternion();
-// scratch for powerup world position — avoids allocation per pickup check
-const _pickupWorld   = new THREE.Vector3();
-// scratch for camera lerp target — avoids new Vector3 per frame
-const _camTarget     = new THREE.Vector3();
-// stage matrix snapshots — hoisted to avoid clone() each frame
-const prevStageMat   = new THREE.Matrix4();
-const currStageMat   = new THREE.Matrix4();
-// scratch for prevPos distance tracking and angVel axis normalize
-const _prevPos       = new THREE.Vector3();
-const _angVelAxis    = new THREE.Vector3();
 
 function closestPointOnTri(P, A, B, C, out) {
   _ab.copy(B).sub(A); _ac.copy(C).sub(A);
-  _ap.copy(P).sub(A);
-  const d1 = _ab.dot(_ap), d2 = _ac.dot(_ap);
+  const ap = new THREE.Vector3().copy(P).sub(A);
+  const d1 = _ab.dot(ap), d2 = _ac.dot(ap);
   if (d1 <= 0 && d2 <= 0) { out.copy(A); return; }
-  _bp.copy(P).sub(B);
-  const d3 = _ab.dot(_bp), d4 = _ac.dot(_bp);
+  const bp = new THREE.Vector3().copy(P).sub(B);
+  const d3 = _ab.dot(bp), d4 = _ac.dot(bp);
   if (d3 >= 0 && d4 <= d3) { out.copy(B); return; }
-  _cp.copy(P).sub(C);
-  const d5 = _ab.dot(_cp), d6 = _ac.dot(_cp);
+  const cp = new THREE.Vector3().copy(P).sub(C);
+  const d5 = _ab.dot(cp), d6 = _ac.dot(cp);
   if (d6 >= 0 && d5 <= d6) { out.copy(C); return; }
   const vc = d1*d4 - d3*d2;
   if (vc <= 0 && d1 >= 0 && d3 <= 0) { out.copy(A).addScaledVector(_ab, d1/(d1-d3)); return; }
@@ -1768,8 +1599,7 @@ function closestPointOnTri(P, A, B, C, out) {
   if (vb <= 0 && d2 >= 0 && d6 <= 0) { out.copy(A).addScaledVector(_ac, d2/(d2-d6)); return; }
   const va = d3*d6 - d5*d4;
   if (va <= 0 && (d4-d3) >= 0 && (d5-d6) >= 0) {
-    _CB.copy(C).sub(B);
-    out.copy(B).addScaledVector(_CB, (d4-d3)/((d4-d3)+(d5-d6))); return;
+    out.copy(B).addScaledVector(new THREE.Vector3().copy(C).sub(B), (d4-d3)/((d4-d3)+(d5-d6))); return;
   }
   const f = 1/(va+vb+vc);
   out.copy(A).addScaledVector(_ab, vb*f).addScaledVector(_ac, vc*f);
@@ -1779,7 +1609,8 @@ function sphereMeshCollision(center, radius, mesh) {
   const { attributes: { position: pos }, index } = mesh.geometry;
   const mw = mesh.matrixWorld;
   const triCount = index ? index.count/3 : pos.count/3;
-  let bestDepth = 0, hasHit = false;
+  const cp = new THREE.Vector3();
+  let bestDepth = 0, bestNormal = null;
 
   for (let i = 0; i < triCount; i++) {
     const i0 = index ? index.getX(i*3)   : i*3;
@@ -1788,18 +1619,15 @@ function sphereMeshCollision(center, radius, mesh) {
     _A.fromBufferAttribute(pos, i0).applyMatrix4(mw);
     _B.fromBufferAttribute(pos, i1).applyMatrix4(mw);
     _C.fromBufferAttribute(pos, i2).applyMatrix4(mw);
-    closestPointOnTri(center, _A, _B, _C, _cpOut);
-    _diff.copy(center).sub(_cpOut);
-    const dist = _diff.length();
+    closestPointOnTri(center, _A, _B, _C, cp);
+    const diff = new THREE.Vector3().copy(center).sub(cp);
+    const dist = diff.length();
     if (dist > 1e-10 && dist < radius && radius-dist > bestDepth) {
       bestDepth = radius - dist;
-      _bestN.copy(_diff).divideScalar(dist);
-      hasHit = true;
+      bestNormal = diff.divideScalar(dist);
     }
   }
-  if (!hasHit) return null;
-  _hitResult.depth = bestDepth;
-  return _hitResult;
+  return bestNormal ? { normal: bestNormal, depth: bestDepth } : null;
 }
 
 // ── MAIN LOOP ─────────────────────────────────────────────────────────────────
@@ -1856,15 +1684,15 @@ function animate() {
   // Snapshot stage matrix BEFORE tilt for floor velocity calculation
   levelJustAdvanced = false;
   stageGroup.updateMatrixWorld(true);
-  prevStageMat.copy(stageGroup.matrixWorld);
+  const prevStageMat = stageGroup.matrixWorld.clone();
 
   // Stage pivot around ball contact point
   const stageQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(worldTiltX, 0, worldTiltZ, 'XZY'));
   const pivot = new THREE.Vector3(pos.x, pos.y, pos.z);
-  stageGroup.position.copy(pivot).sub(_pivotTmp.copy(pivot).applyQuaternion(stageQuat));
+  stageGroup.position.copy(pivot).sub(pivot.clone().applyQuaternion(stageQuat));
   stageGroup.setRotationFromQuaternion(stageQuat);
   stageGroup.updateMatrixWorld(true);
-  currStageMat.copy(stageGroup.matrixWorld);
+  const currStageMat = stageGroup.matrixWorld.clone();
 
   // Sun tracks ball — shadow frustum stays tight around the player
   sun.position.set(pos.x + 20, pos.y + 40, pos.z + 20);
@@ -1873,8 +1701,9 @@ function animate() {
   sun.shadow.camera.updateProjectionMatrix();
 
   // Physics
-  vel.addScaledVector(_gravVec, dt);
-  const prevPos = _prevPos.copy(pos);
+  const grav = new THREE.Vector3(0, -P.gravity, 0);
+  vel.addScaledVector(grav, dt);
+  const prevPos = pos.clone();
   pos.addScaledVector(vel, dt);
 
   // Track run stats
@@ -1922,10 +1751,11 @@ function animate() {
   }
 
   // Powerup pickup (compare world positions since powerups are in stageGroup)
+  stageGroup.updateMatrixWorld(true);
   for (let i = powerupMeshes.length - 1; i >= 0; i--) {
     const m = powerupMeshes[i];
-    _pickupWorld.setFromMatrixPosition(m.matrixWorld);
-    if (pos.distanceTo(_pickupWorld) < currentRadius + 0.8) {
+    const worldPos = new THREE.Vector3().setFromMatrixPosition(m.matrixWorld);
+    if (pos.distanceTo(worldPos) < currentRadius + 0.8) {
       POWERUP_DEFS[m.userData.powerupType].onPickup();
       stageGroup.remove(m);
       powerupMeshes.splice(i, 1);
@@ -1962,11 +1792,8 @@ function animate() {
   // Update launchers
   updateLaunchers(dt, pos);
 
-  // Update world matrices once after all transforms are final for this frame
-  stageGroup.updateMatrixWorld(true);
-
   // Collision
-  _stageMatInv.copy(prevStageMat).invert();
+  stageGroup.updateMatrixWorld(true);
   onFloor = false;
   stageGroup.traverse(child => {
     if (!child.isMesh || child.userData.collidable === false) return;
@@ -1975,42 +1802,51 @@ function animate() {
     const { normal: n, depth } = hit;
     const phys = MATERIALS[child.userData.physicsMaterial] || MATERIALS.default;
     const restitution = Math.min(phys.restitution * bouncyMult, 0.99);
-    lastMatName = child.userData.physicsMaterial || 'default';
 
     pos.addScaledVector(n, depth);
 
     // ── Surface velocity from spinning props ──────────────────────────────
-    _surfVel.set(0, 0, 0);
-    _contactPt.copy(pos).addScaledVector(n, -currentRadius);
+    // Walk ancestors to find if this mesh belongs to a spinner or launcher pivot.
+    // Compute the world-space velocity of the contact point on that rotating body.
+    const surfVel = new THREE.Vector3();
+    const contactPt = pos.clone().addScaledVector(n, -currentRadius);
 
-    // Check spinners
+    // Check spinners — they rotate around world Y at group.position
     for (const sp of spinners) {
       if (!child.parent) break;
-      let node = child, found = false;
+      // Is this mesh a descendant of sp.group?
+      let node = child;
+      let found = false;
       while (node) { if (node === sp.group) { found = true; break; } node = node.parent; }
       if (found) {
-        sp.group.getWorldPosition(_pivotWorld);
-        _rContact.copy(_contactPt).sub(_pivotWorld);
-        _omega.set(0, sp.speed, 0);
-        _surfVel.crossVectors(_omega, _rContact);
+        // ω = sp.speed around world Y axis at sp.group world position
+        const pivot = new THREE.Vector3();
+        sp.group.getWorldPosition(pivot);
+        const r_contact = contactPt.clone().sub(pivot);
+        // surfVel = ω × r  where ω = (0, sp.speed, 0)
+        const omega = new THREE.Vector3(0, sp.speed, 0);
+        surfVel.crossVectors(omega, r_contact);
         break;
       }
     }
 
-    // Check launchers
-    if (_surfVel.lengthSq() === 0) {
+    // Check launchers — pivot group rotates around Y at pivot world position
+    if (surfVel.lengthSq() === 0) {
       for (const la of launchers) {
-        let node = child, found = false;
+        let node = child;
+        let found = false;
         while (node) { if (node === la.pivot) { found = true; break; } node = node.parent; }
         if (found) {
+          // Current angular speed of the pivot (only nonzero during swing/return)
           let omegaY = 0;
           if (la.state === 'swing')  omegaY =  LAUNCHER_SWING_SPD;
           if (la.state === 'return') omegaY = -LAUNCHER_RETURN_SPD;
           if (omegaY !== 0) {
-            la.pivot.getWorldPosition(_pivotWorld);
-            _rContact.copy(_contactPt).sub(_pivotWorld);
-            _omega.set(0, omegaY, 0);
-            _surfVel.crossVectors(_omega, _rContact);
+            const pivotWorld = new THREE.Vector3();
+            la.pivot.getWorldPosition(pivotWorld);
+            const r_contact = contactPt.clone().sub(pivotWorld);
+            const omega = new THREE.Vector3(0, omegaY, 0);
+            surfVel.crossVectors(omega, r_contact);
           }
           break;
         }
@@ -2018,20 +1854,22 @@ function animate() {
     }
 
     // Relative velocity of ball w.r.t. surface
-    _relVel.copy(vel).sub(_surfVel);
+    const relVel = vel.clone().sub(surfVel);
 
-    // Floor velocity compensation from stage tilt
-    _contactPtW.copy(pos).addScaledVector(n, -currentRadius);
-    _localContact.copy(_contactPtW).applyMatrix4(_stageMatInv);
-    _prevWorld.copy(_localContact).applyMatrix4(prevStageMat);
-    _currWorld.copy(_localContact).applyMatrix4(currStageMat);
-    _floorVel.copy(_currWorld).sub(_prevWorld).divideScalar(Math.max(dt, 1e-6));
-    if (levelJustAdvanced) _floorVel.set(0, 0, 0);
-    _relVel.sub(_floorVel);
+    // Subtract floor velocity due to stage tilt this frame.
+    // Compute where the contact point was before and after the tilt update.
+    const contactPtWorld = pos.clone().addScaledVector(n, -currentRadius);
+    const stageMatInv = new THREE.Matrix4().copy(prevStageMat).invert();
+    const localContact = contactPtWorld.clone().applyMatrix4(stageMatInv);
+    const prevWorld = localContact.clone().applyMatrix4(prevStageMat);
+    const currWorld = localContact.clone().applyMatrix4(currStageMat);
+    const floorVelAtContact = currWorld.sub(prevWorld).divideScalar(Math.max(dt, 1e-6));
+    if (levelJustAdvanced) floorVelAtContact.set(0, 0, 0);
+    relVel.sub(floorVelAtContact);
 
-    const vn = _relVel.dot(n);
+    const vn = relVel.dot(n);
 
-    // Bounce pad
+    // Bounce pad — preset upward launch regardless of approach velocity
     if (phys.bounceVel && n.y > 0.5) {
       vel.y = phys.bounceVel;
       onFloor = true;
@@ -2039,47 +1877,47 @@ function animate() {
     }
 
     if (vn < 0) {
+      // Apply impulse in relative frame, then add surface velocity contribution
       vel.addScaledVector(n, -vn * (1 + restitution));
       if (vel.dot(n) < 0.4) vel.addScaledVector(n, -vel.dot(n));
-      vel.addScaledVector(n, _surfVel.dot(n) * restitution);
+      // Transfer surface velocity component along normal
+      vel.addScaledVector(n, surfVel.dot(n) * restitution);
+      // Cap outgoing vertical velocity to prevent bouncyball runaway
       if (vel.y > 22) vel.y = 22;
     }
     if (n.y > 0.643) onFloor = true;
 
-    // Friction
-    _r.copy(n).multiplyScalar(-currentRadius);
-    _crossTmp.crossVectors(angVel, _r);
-    _ballCVel.copy(vel).add(_crossTmp);
-    _vSlipTmp.copy(_ballCVel).sub(_surfVel);
-    _vSlip.copy(_vSlipTmp).addScaledVector(n, -_vSlipTmp.dot(n));
-    const slipSpeed = _vSlip.length();
-    const I_cur = 0.4 * P.mass * currentRadius * currentRadius;
+    // Friction (use relative velocity for slip)
+    const r = n.clone().multiplyScalar(-currentRadius);
+    const ballContactVel = vel.clone().add(new THREE.Vector3().crossVectors(angVel, r));
+    const vSlip = ballContactVel.clone().sub(surfVel)
+      .addScaledVector(n, -ballContactVel.clone().sub(surfVel).dot(n));
+    const slipSpeed = vSlip.length();
     if (slipSpeed > 1e-5) {
-      _sd.copy(_vSlip).divideScalar(slipSpeed);
-      const Fn   = P.mass * Math.abs(_gravVec.dot(n));
-      _crossRSd.crossVectors(_r, _sd);
-      const mEff = 1 / (1/P.mass + _crossRSd.lengthSq() / I_cur);
-      _sd.multiplyScalar(-Math.min(slipSpeed * mEff, phys.friction * Fn * dt)); // _sd is now imp
-      vel.addScaledVector(_sd, 1/P.mass);
-      _crossRImp.crossVectors(_r, _sd);
-      angVel.addScaledVector(_crossRImp, 1/I_cur);
+      const I_cur = 0.4 * P.mass * currentRadius * currentRadius;
+      const sd   = vSlip.clone().divideScalar(slipSpeed);
+      const Fn   = P.mass * Math.abs(grav.dot(n));
+      const mEff = 1 / (1/P.mass + new THREE.Vector3().crossVectors(r, sd).lengthSq() / I_cur);
+      const imp  = sd.multiplyScalar(-Math.min(slipSpeed * mEff, phys.friction * Fn * dt));
+      vel.addScaledVector(imp, 1/P.mass);
+      angVel.addScaledVector(new THREE.Vector3().crossVectors(r, imp), 1/I_cur);
     }
 
     // Rolling resistance
+    const I_cur2 = 0.4 * P.mass * currentRadius * currentRadius;
     const wSpeed = angVel.length();
     if (wSpeed > 1e-6) {
-      const dw = Math.min(phys.rollingResist * P.mass * Math.abs(_gravVec.dot(n)) * currentRadius * dt / I_cur, wSpeed);
+      const dw = Math.min(phys.rollingResist * P.mass * Math.abs(grav.dot(n)) * currentRadius * dt / I_cur2, wSpeed);
       angVel.multiplyScalar(1 - dw / wSpeed);
     }
   });
 
-  updateHUD();
   if (pos.y < -15) { showGameOver(); return; }
 
   // Orientation
   const wLen = angVel.length();
   if (wLen > 1e-10) {
-    orient.premultiply(_orientQ.setFromAxisAngle(_angVelAxis.copy(angVel).divideScalar(wLen), wLen * dt));
+    orient.premultiply(new THREE.Quaternion().setFromAxisAngle(angVel.clone().divideScalar(wLen), wLen * dt));
     orient.normalize();
   }
 
@@ -2091,7 +1929,7 @@ function animate() {
   const camX = pos.x + CAM_DIST * Math.sin(camPolar) * Math.sin(camAzimuth);
   const camY = pos.y + CAM_DIST * Math.cos(camPolar);
   const camZ = pos.z + CAM_DIST * Math.sin(camPolar) * Math.cos(camAzimuth);
-  camera.position.lerp(_camTarget.set(camX, camY, camZ), 0.08);
+  camera.position.lerp(new THREE.Vector3(camX, camY, camZ), 0.08);
   camera.lookAt(pos);
   renderer.render(scene, camera);
   updateDiag(dt);

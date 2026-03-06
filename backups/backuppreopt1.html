@@ -204,7 +204,9 @@
   <div id="menu-hint">TAB — diagnostics &nbsp;&nbsp;|&nbsp;&nbsp; R — reset in game</div>
 </div>
 
-
+<div id="debug-advance" style="display:none;position:fixed;bottom:16px;left:16px;z-index:50;">
+  <button id="btn-advance" style="background:rgba(255,80,80,0.2);border:1px solid rgba(255,80,80,0.5);color:rgba(255,80,80,0.9);font-family:monospace;font-size:11px;padding:6px 12px;cursor:pointer;letter-spacing:1px;">⏩ NEXT LEVEL [DEBUG]</button>
+</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script>
@@ -1348,7 +1350,7 @@ const ICYHOT_RADAR_SPD = 0.6;    // seconds per radar cycle
 // Build icyhot mesh (white cylinder, collidable=false)
 const icyhotGeo = new THREE.CylinderGeometry(0.22, 0.22, 0.8, 32);
 const icyhotTex = new THREE.TextureLoader().load('icyhot.png');
-const icyhotMat = new THREE.MeshStandardMaterial({ map: icyhotTex, roughness: 0.2, metalness: 0.3, emissive: 0x5f8fb3, emissiveIntensity: 0.56 });
+const icyhotMat = new THREE.MeshStandardMaterial({ map: icyhotTex, roughness: 0.2, metalness: 0.3, emissive: 0x88ccff, emissiveIntensity: 0.8 });
 const icyhotMesh = new THREE.Mesh(icyhotGeo, icyhotMat);
 icyhotMesh.castShadow = true;
 icyhotMesh.userData.collidable = false;
@@ -1544,6 +1546,7 @@ function enterGame(mode) {
   camAzimuth = Math.PI; camPolar = CAM_POL_DEFAULT;
   snapCamera();
   labPanel.style.display = mode === 'test' ? 'block' : 'none';
+  debugAdvanceEl.style.display = mode === 'play' ? 'block' : 'none';
   resetEffects();
   refreshLabPanel();
   if (mode === 'test') { stageGroup.remove(icyhotMesh); icyhotActive = false; buildTestLab(); }
@@ -1676,6 +1679,10 @@ document.getElementById('btn-play').addEventListener('click', () => {
 });
 document.getElementById('btn-test').addEventListener('click', () => enterGame('test'));
 
+// Debug: advance level button
+const debugAdvanceEl = document.getElementById('debug-advance');
+document.getElementById('btn-advance').addEventListener('click', () => collectIcyhot());
+
 // ── INPUT ─────────────────────────────────────────────────────────────────────
 const keys = {};
 window.addEventListener('keydown', e => {
@@ -1736,20 +1743,6 @@ const _hitResult     = { normal: _bestN, depth: 0 };
 const _gravVec       = new THREE.Vector3(0, -25, 0);
 // stage matrix inverse — computed once per frame before collision traverse
 const _stageMatInv   = new THREE.Matrix4();
-// scratch for tilt pivot calculation — avoids clone() per frame
-const _pivotTmp      = new THREE.Vector3();
-// scratch quaternion for orientation update — avoids new Quaternion() per frame
-const _orientQ       = new THREE.Quaternion();
-// scratch for powerup world position — avoids allocation per pickup check
-const _pickupWorld   = new THREE.Vector3();
-// scratch for camera lerp target — avoids new Vector3 per frame
-const _camTarget     = new THREE.Vector3();
-// stage matrix snapshots — hoisted to avoid clone() each frame
-const prevStageMat   = new THREE.Matrix4();
-const currStageMat   = new THREE.Matrix4();
-// scratch for prevPos distance tracking and angVel axis normalize
-const _prevPos       = new THREE.Vector3();
-const _angVelAxis    = new THREE.Vector3();
 
 function closestPointOnTri(P, A, B, C, out) {
   _ab.copy(B).sub(A); _ac.copy(C).sub(A);
@@ -1856,15 +1849,15 @@ function animate() {
   // Snapshot stage matrix BEFORE tilt for floor velocity calculation
   levelJustAdvanced = false;
   stageGroup.updateMatrixWorld(true);
-  prevStageMat.copy(stageGroup.matrixWorld);
+  const prevStageMat = stageGroup.matrixWorld.clone();
 
   // Stage pivot around ball contact point
   const stageQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(worldTiltX, 0, worldTiltZ, 'XZY'));
   const pivot = new THREE.Vector3(pos.x, pos.y, pos.z);
-  stageGroup.position.copy(pivot).sub(_pivotTmp.copy(pivot).applyQuaternion(stageQuat));
+  stageGroup.position.copy(pivot).sub(pivot.clone().applyQuaternion(stageQuat));
   stageGroup.setRotationFromQuaternion(stageQuat);
   stageGroup.updateMatrixWorld(true);
-  currStageMat.copy(stageGroup.matrixWorld);
+  const currStageMat = stageGroup.matrixWorld.clone();
 
   // Sun tracks ball — shadow frustum stays tight around the player
   sun.position.set(pos.x + 20, pos.y + 40, pos.z + 20);
@@ -1874,7 +1867,7 @@ function animate() {
 
   // Physics
   vel.addScaledVector(_gravVec, dt);
-  const prevPos = _prevPos.copy(pos);
+  const prevPos = pos.clone();
   pos.addScaledVector(vel, dt);
 
   // Track run stats
@@ -1924,8 +1917,8 @@ function animate() {
   // Powerup pickup (compare world positions since powerups are in stageGroup)
   for (let i = powerupMeshes.length - 1; i >= 0; i--) {
     const m = powerupMeshes[i];
-    _pickupWorld.setFromMatrixPosition(m.matrixWorld);
-    if (pos.distanceTo(_pickupWorld) < currentRadius + 0.8) {
+    const worldPos = new THREE.Vector3().setFromMatrixPosition(m.matrixWorld);
+    if (pos.distanceTo(worldPos) < currentRadius + 0.8) {
       POWERUP_DEFS[m.userData.powerupType].onPickup();
       stageGroup.remove(m);
       powerupMeshes.splice(i, 1);
@@ -2053,8 +2046,8 @@ function animate() {
     _vSlipTmp.copy(_ballCVel).sub(_surfVel);
     _vSlip.copy(_vSlipTmp).addScaledVector(n, -_vSlipTmp.dot(n));
     const slipSpeed = _vSlip.length();
-    const I_cur = 0.4 * P.mass * currentRadius * currentRadius;
     if (slipSpeed > 1e-5) {
+      const I_cur = 0.4 * P.mass * currentRadius * currentRadius;
       _sd.copy(_vSlip).divideScalar(slipSpeed);
       const Fn   = P.mass * Math.abs(_gravVec.dot(n));
       _crossRSd.crossVectors(_r, _sd);
@@ -2066,9 +2059,10 @@ function animate() {
     }
 
     // Rolling resistance
+    const I_cur2 = 0.4 * P.mass * currentRadius * currentRadius;
     const wSpeed = angVel.length();
     if (wSpeed > 1e-6) {
-      const dw = Math.min(phys.rollingResist * P.mass * Math.abs(_gravVec.dot(n)) * currentRadius * dt / I_cur, wSpeed);
+      const dw = Math.min(phys.rollingResist * P.mass * Math.abs(_gravVec.dot(n)) * currentRadius * dt / I_cur2, wSpeed);
       angVel.multiplyScalar(1 - dw / wSpeed);
     }
   });
@@ -2079,7 +2073,7 @@ function animate() {
   // Orientation
   const wLen = angVel.length();
   if (wLen > 1e-10) {
-    orient.premultiply(_orientQ.setFromAxisAngle(_angVelAxis.copy(angVel).divideScalar(wLen), wLen * dt));
+    orient.premultiply(new THREE.Quaternion().setFromAxisAngle(angVel.clone().divideScalar(wLen), wLen * dt));
     orient.normalize();
   }
 
@@ -2091,7 +2085,7 @@ function animate() {
   const camX = pos.x + CAM_DIST * Math.sin(camPolar) * Math.sin(camAzimuth);
   const camY = pos.y + CAM_DIST * Math.cos(camPolar);
   const camZ = pos.z + CAM_DIST * Math.sin(camPolar) * Math.cos(camAzimuth);
-  camera.position.lerp(_camTarget.set(camX, camY, camZ), 0.08);
+  camera.position.lerp(new THREE.Vector3(camX, camY, camZ), 0.08);
   camera.lookAt(pos);
   renderer.render(scene, camera);
   updateDiag(dt);
