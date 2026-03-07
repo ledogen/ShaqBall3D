@@ -1904,7 +1904,7 @@ function animate() {
   requestAnimationFrame(animate);
   if (dialogPaused) return;
   const now = performance.now();
-  const dt  = Math.min((now - prevTime) / 1000, 0.05);
+  const dt  = Math.min((now - prevTime) / 1000, 0.033);
   prevTime  = now;
 
   // ── MENU — orbit camera, no physics ─────────────────────────────────────────
@@ -1931,12 +1931,14 @@ function animate() {
     // Map beta (forward/back) and gamma (left/right) to tiltX/tiltZ
     // beta positive = phone top tilting away → tilt stage forward (negative tiltX)
     // gamma positive = phone tilting right → tilt stage right (negative tiltZ)
-    const rawX = -(devBeta  - (devBeta  > 0 ? TILT_DEAD : -TILT_DEAD));
+    const rawX = (devBeta  - (devBeta  > 0 ? TILT_DEAD : -TILT_DEAD));
     const rawZ = -(devGamma - (devGamma > 0 ? TILT_DEAD : -TILT_DEAD));
-    const clampedX = Math.max(-tm, Math.min(tm, rawX * TILT_SCALE * tm));
-    const clampedZ = Math.max(-tm, Math.min(tm, rawZ * TILT_SCALE * tm));
-    tiltX = Math.abs(devBeta)  > TILT_DEAD ? clampedX : 0;
-    tiltZ = Math.abs(devGamma) > TILT_DEAD ? clampedZ : 0;
+    const targetX = Math.abs(devBeta)  > TILT_DEAD ? Math.max(-tm, Math.min(tm, rawX * TILT_SCALE * tm)) : 0;
+    const targetZ = Math.abs(devGamma) > TILT_DEAD ? Math.max(-tm, Math.min(tm, rawZ * TILT_SCALE * tm)) : 0;
+    // Lerp toward target to smooth sensor noise and avoid clamping snap
+    const tiltLerp = Math.min(1, 10 * dt);
+    tiltX += (targetX - tiltX) * tiltLerp;
+    tiltZ += (targetZ - tiltZ) * tiltLerp;
   } else {
     const pX = keys['KeyW'] || keys['KeyS'];
     const pZ = keys['KeyA'] || keys['KeyD'];
@@ -1978,12 +1980,124 @@ function animate() {
   sun.target.updateMatrixWorld();
   sun.shadow.camera.updateProjectionMatrix();
 
-  // Physics
-  vel.addScaledVector(_gravVec, dt);
-  const prevPos = _prevPos.copy(pos);
-  pos.addScaledVector(vel, dt);
+  // Physics — substeps for stability (2 on mobile, 1 on desktop)
+  const nSub = isMobile ? 2 : 1;
+  const sdt  = dt / nSub;
+  for (let sub = 0; sub < nSub; sub++) {
+    vel.addScaledVector(_gravVec, sdt);
+    pos.addScaledVector(vel, sdt);
+
+    // Collision
+    _stageMatInv.copy(prevStageMat).invert();
+    onFloor = false;
+    stageGroup.traverse(child => {
+      if (!child.isMesh || child.userData.collidable === false) return;
+      const hit = sphereMeshCollision(pos, currentRadius, child);
+      if (!hit) return;
+      const { normal: n, depth } = hit;
+      const phys = MATERIALS[child.userData.physicsMaterial] || MATERIALS.default;
+      const restitution = Math.min(phys.restitution * bouncyMult, 0.99);
+      lastMatName = child.userData.physicsMaterial || 'default';
+
+      pos.addScaledVector(n, depth);
+
+      // ── Surface velocity from spinning props ──────────────────────────────
+      _surfVel.set(0, 0, 0);
+      _contactPt.copy(pos).addScaledVector(n, -currentRadius);
+
+      // Check spinners
+      for (const sp of spinners) {
+        if (!child.parent) break;
+        let node = child, found = false;
+        while (node) { if (node === sp.group) { found = true; break; } node = node.parent; }
+        if (found) {
+          sp.group.getWorldPosition(_pivotWorld);
+          _rContact.copy(_contactPt).sub(_pivotWorld);
+          _omega.set(0, sp.speed, 0);
+          _surfVel.crossVectors(_omega, _rContact);
+          break;
+        }
+      }
+
+      // Check launchers
+      if (_surfVel.lengthSq() === 0) {
+        for (const la of launchers) {
+          let node = child, found = false;
+          while (node) { if (node === la.pivot) { found = true; break; } node = node.parent; }
+          if (found) {
+            let omegaY = 0;
+            if (la.state === 'swing')  omegaY =  LAUNCHER_SWING_SPD;
+            if (la.state === 'return') omegaY = -LAUNCHER_RETURN_SPD;
+            if (omegaY !== 0) {
+              la.pivot.getWorldPosition(_pivotWorld);
+              _rContact.copy(_contactPt).sub(_pivotWorld);
+              _omega.set(0, omegaY, 0);
+              _surfVel.crossVectors(_omega, _rContact);
+            }
+            break;
+          }
+        }
+      }
+
+      // Relative velocity of ball w.r.t. surface
+      _relVel.copy(vel).sub(_surfVel);
+
+      // Floor velocity compensation from stage tilt
+      _contactPtW.copy(pos).addScaledVector(n, -currentRadius);
+      _localContact.copy(_contactPtW).applyMatrix4(_stageMatInv);
+      _prevWorld.copy(_localContact).applyMatrix4(prevStageMat);
+      _currWorld.copy(_localContact).applyMatrix4(currStageMat);
+      _floorVel.copy(_currWorld).sub(_prevWorld).divideScalar(Math.max(dt, 1e-6));
+      if (levelJustAdvanced) _floorVel.set(0, 0, 0);
+      _relVel.sub(_floorVel);
+
+      const vn = _relVel.dot(n);
+
+      // Bounce pad
+      if (phys.bounceVel && n.y > 0.5) {
+        vel.y = phys.bounceVel;
+        onFloor = true;
+        return;
+      }
+
+      if (vn < 0) {
+        vel.addScaledVector(n, -vn * (1 + restitution));
+        if (vel.dot(n) < 0.4) vel.addScaledVector(n, -vel.dot(n));
+        vel.addScaledVector(n, _surfVel.dot(n) * restitution);
+        if (vel.y > 22) vel.y = 22;
+      }
+      if (n.y > 0.643) onFloor = true;
+
+      // Friction
+      _r.copy(n).multiplyScalar(-currentRadius);
+      _crossTmp.crossVectors(angVel, _r);
+      _ballCVel.copy(vel).add(_crossTmp);
+      _vSlipTmp.copy(_ballCVel).sub(_surfVel);
+      _vSlip.copy(_vSlipTmp).addScaledVector(n, -_vSlipTmp.dot(n));
+      const slipSpeed = _vSlip.length();
+      const I_cur = 0.4 * P.mass * currentRadius * currentRadius;
+      if (slipSpeed > 1e-5) {
+        _sd.copy(_vSlip).divideScalar(slipSpeed);
+        const Fn   = P.mass * Math.abs(_gravVec.dot(n));
+        _crossRSd.crossVectors(_r, _sd);
+        const mEff = 1 / (1/P.mass + _crossRSd.lengthSq() / I_cur);
+        _sd.multiplyScalar(-Math.min(slipSpeed * mEff, phys.friction * Fn * sdt)); // _sd is now imp
+        vel.addScaledVector(_sd, 1/P.mass);
+        _crossRImp.crossVectors(_r, _sd);
+        angVel.addScaledVector(_crossRImp, 1/I_cur);
+      }
+
+      // Rolling resistance
+      const wSpeed = angVel.length();
+      if (wSpeed > 1e-6) {
+        const dw = Math.min(phys.rollingResist * P.mass * Math.abs(_gravVec.dot(n)) * currentRadius * sdt / I_cur, wSpeed);
+        angVel.multiplyScalar(1 - dw / wSpeed);
+      }
+    });
+  } // end substep loop
 
   // Track run stats
+  const prevPos = _prevPos.copy(pos);
   if (gameMode === 'play') {
     if (pos.y > statMaxY) statMaxY = pos.y;
     const spd = vel.length();
@@ -2067,117 +2181,6 @@ function animate() {
 
   // Update launchers
   updateLaunchers(dt, pos);
-
-  // Update world matrices once after all transforms are final for this frame
-  stageGroup.updateMatrixWorld(true);
-
-  // Collision
-  _stageMatInv.copy(prevStageMat).invert();
-  onFloor = false;
-  stageGroup.traverse(child => {
-    if (!child.isMesh || child.userData.collidable === false) return;
-    const hit = sphereMeshCollision(pos, currentRadius, child);
-    if (!hit) return;
-    const { normal: n, depth } = hit;
-    const phys = MATERIALS[child.userData.physicsMaterial] || MATERIALS.default;
-    const restitution = Math.min(phys.restitution * bouncyMult, 0.99);
-    lastMatName = child.userData.physicsMaterial || 'default';
-
-    pos.addScaledVector(n, depth);
-
-    // ── Surface velocity from spinning props ──────────────────────────────
-    _surfVel.set(0, 0, 0);
-    _contactPt.copy(pos).addScaledVector(n, -currentRadius);
-
-    // Check spinners
-    for (const sp of spinners) {
-      if (!child.parent) break;
-      let node = child, found = false;
-      while (node) { if (node === sp.group) { found = true; break; } node = node.parent; }
-      if (found) {
-        sp.group.getWorldPosition(_pivotWorld);
-        _rContact.copy(_contactPt).sub(_pivotWorld);
-        _omega.set(0, sp.speed, 0);
-        _surfVel.crossVectors(_omega, _rContact);
-        break;
-      }
-    }
-
-    // Check launchers
-    if (_surfVel.lengthSq() === 0) {
-      for (const la of launchers) {
-        let node = child, found = false;
-        while (node) { if (node === la.pivot) { found = true; break; } node = node.parent; }
-        if (found) {
-          let omegaY = 0;
-          if (la.state === 'swing')  omegaY =  LAUNCHER_SWING_SPD;
-          if (la.state === 'return') omegaY = -LAUNCHER_RETURN_SPD;
-          if (omegaY !== 0) {
-            la.pivot.getWorldPosition(_pivotWorld);
-            _rContact.copy(_contactPt).sub(_pivotWorld);
-            _omega.set(0, omegaY, 0);
-            _surfVel.crossVectors(_omega, _rContact);
-          }
-          break;
-        }
-      }
-    }
-
-    // Relative velocity of ball w.r.t. surface
-    _relVel.copy(vel).sub(_surfVel);
-
-    // Floor velocity compensation from stage tilt
-    _contactPtW.copy(pos).addScaledVector(n, -currentRadius);
-    _localContact.copy(_contactPtW).applyMatrix4(_stageMatInv);
-    _prevWorld.copy(_localContact).applyMatrix4(prevStageMat);
-    _currWorld.copy(_localContact).applyMatrix4(currStageMat);
-    _floorVel.copy(_currWorld).sub(_prevWorld).divideScalar(Math.max(dt, 1e-6));
-    if (levelJustAdvanced) _floorVel.set(0, 0, 0);
-    _relVel.sub(_floorVel);
-
-    const vn = _relVel.dot(n);
-
-    // Bounce pad
-    if (phys.bounceVel && n.y > 0.5) {
-      vel.y = phys.bounceVel;
-      onFloor = true;
-      return;
-    }
-
-    if (vn < 0) {
-      vel.addScaledVector(n, -vn * (1 + restitution));
-      if (vel.dot(n) < 0.4) vel.addScaledVector(n, -vel.dot(n));
-      vel.addScaledVector(n, _surfVel.dot(n) * restitution);
-      if (vel.y > 22) vel.y = 22;
-    }
-    if (n.y > 0.643) onFloor = true;
-
-    // Friction
-    _r.copy(n).multiplyScalar(-currentRadius);
-    _crossTmp.crossVectors(angVel, _r);
-    _ballCVel.copy(vel).add(_crossTmp);
-    _vSlipTmp.copy(_ballCVel).sub(_surfVel);
-    _vSlip.copy(_vSlipTmp).addScaledVector(n, -_vSlipTmp.dot(n));
-    const slipSpeed = _vSlip.length();
-    const I_cur = 0.4 * P.mass * currentRadius * currentRadius;
-    if (slipSpeed > 1e-5) {
-      _sd.copy(_vSlip).divideScalar(slipSpeed);
-      const Fn   = P.mass * Math.abs(_gravVec.dot(n));
-      _crossRSd.crossVectors(_r, _sd);
-      const mEff = 1 / (1/P.mass + _crossRSd.lengthSq() / I_cur);
-      _sd.multiplyScalar(-Math.min(slipSpeed * mEff, phys.friction * Fn * dt)); // _sd is now imp
-      vel.addScaledVector(_sd, 1/P.mass);
-      _crossRImp.crossVectors(_r, _sd);
-      angVel.addScaledVector(_crossRImp, 1/I_cur);
-    }
-
-    // Rolling resistance
-    const wSpeed = angVel.length();
-    if (wSpeed > 1e-6) {
-      const dw = Math.min(phys.rollingResist * P.mass * Math.abs(_gravVec.dot(n)) * currentRadius * dt / I_cur, wSpeed);
-      angVel.multiplyScalar(1 - dw / wSpeed);
-    }
-  });
 
   updateHUD();
   if (pos.y < -15) { showGameOver(); return; }
