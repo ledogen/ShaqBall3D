@@ -134,6 +134,7 @@
 <canvas id="c"></canvas>
 <canvas id="radar-canvas" style="position:fixed;top:0;left:0;pointer-events:none;z-index:10;"></canvas>
 <div id="collect-flash" style="position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:20;opacity:0;background:white;transition:opacity 0.05s;"></div>
+<div id="ios-motion-btn" style="display:none;position:fixed;bottom:80px;left:50%;transform:translateX(-50%);z-index:30;background:rgba(0,0,0,0.75);color:#fff;border:1px solid rgba(255,255,255,0.3);padding:10px 22px;border-radius:8px;font-family:inherit;font-size:13px;cursor:pointer;letter-spacing:1px;">📱 Enable Tilt Controls</div>
 <div id="timer-display" style="position:fixed;top:62px;left:50%;transform:translateX(-50%);font-family:monospace;font-weight:900;font-size:42px;pointer-events:none;display:none;text-align:center;background:rgba(0,0,0,0.45);padding:4px 20px;border-radius:4px;"></div>
 
 <div id="shaq-dialog">
@@ -1702,6 +1703,84 @@ window.addEventListener('keydown', e => {
 });
 window.addEventListener('keyup', e => { keys[e.code] = false; });
 
+// ── MOBILE INPUT ──────────────────────────────────────────────────────────────
+const isMobile = ('ontouchstart' in window);
+let deviceTiltActive = false;   // true once orientation permission granted
+let devBeta  = 0;               // device forward/back tilt (degrees)
+let devGamma = 0;               // device left/right tilt (degrees)
+const TILT_DEAD   = 4;          // degrees deadzone
+const TILT_SCALE  = 1 / 25;    // degrees → 0..1 tilt fraction
+let touchHeld   = false;        // true while finger is down (for jetpack)
+let touchStartX = 0, touchStartY = 0;
+let touchLastX  = 0;
+let touchIsDrag = false;        // true once finger moved enough to be a drag
+const DRAG_THRESHOLD = 8;       // px before we decide it's a drag not a tap
+const CAM_DRAG_SCALE = 0.005;   // radians per pixel of horizontal drag
+
+function applyDeviceOrientation(e) {
+  // beta:  -180..180, 0 = flat, positive = top tilted toward user
+  // gamma: -90..90,   negative = tilted left, positive = tilted right
+  devBeta  = e.beta  ?? 0;
+  devGamma = e.gamma ?? 0;
+}
+
+function setupDeviceOrientation() {
+  window.addEventListener('deviceorientation', applyDeviceOrientation);
+  deviceTiltActive = true;
+  const btn = document.getElementById('ios-motion-btn');
+  if (btn) btn.style.display = 'none';
+}
+
+if (isMobile) {
+  // Show iOS permission button; on non-iOS it auto-enables on first orientation event
+  const iosBtn = document.getElementById('ios-motion-btn');
+
+  // Non-iOS: just listen directly (no permission needed)
+  if (typeof DeviceOrientationEvent !== 'undefined' &&
+      typeof DeviceOrientationEvent.requestPermission !== 'function') {
+    setupDeviceOrientation();
+  } else if (typeof DeviceOrientationEvent !== 'undefined') {
+    // iOS 13+: need user gesture to request permission
+    iosBtn.style.display = 'block';
+    iosBtn.addEventListener('click', () => {
+      DeviceOrientationEvent.requestPermission().then(state => {
+        if (state === 'granted') setupDeviceOrientation();
+      }).catch(() => {});
+    });
+  }
+
+  // Touch: one finger = drag (camera) or tap (jump)
+  window.addEventListener('touchstart', e => {
+    if (gameMode === 'menu') return;
+    const t = e.changedTouches[0];
+    touchStartX = touchLastX = t.clientX;
+    touchStartY = t.clientY;
+    touchIsDrag = false;
+    touchHeld = true;
+  }, { passive: true });
+
+  window.addEventListener('touchmove', e => {
+    if (gameMode === 'menu') return;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - touchLastX;
+    const totalMoved = Math.abs(t.clientX - touchStartX) + Math.abs(t.clientY - touchStartY);
+    if (totalMoved > DRAG_THRESHOLD) touchIsDrag = true;
+    if (touchIsDrag) camAzimuth -= dx * CAM_DRAG_SCALE;
+    touchLastX = t.clientX;
+  }, { passive: true });
+
+  window.addEventListener('touchend', e => {
+    if (gameMode === 'menu') return;
+    touchHeld = false;
+    if (!touchIsDrag) {
+      // It's a tap — trigger jump
+      jumpBuffered = true;
+      jumpBufferTime = performance.now();
+    }
+    touchIsDrag = false;
+  }, { passive: true });
+}
+
 function reset() {
   pos.set(0, BASE.radius + 1, 0); vel.set(0,0,0); angVel.set(0,0,0);
   orient.identity(); tiltX = tiltZ = 0; jumpBuffered = false;
@@ -1846,16 +1925,28 @@ function animate() {
   if (keys['Space'] && !prevSpaceDown) { jumpBuffered = true; jumpBufferTime = now; }
   prevSpaceDown = !!keys['Space'];
 
-  // Tilt — WASD in camera-relative space
+  // Tilt — WASD in camera-relative space, or device orientation on mobile
   const ts = P.tiltSpeed * DEG * dt, tr = P.tiltReturn * DEG * dt, tm = P.tiltMax * DEG;
-  const pX = keys['KeyW'] || keys['KeyS'];
-  const pZ = keys['KeyA'] || keys['KeyD'];
-  if (keys['KeyW']) tiltX = Math.max(tiltX - ts, -tm);
-  if (keys['KeyS']) tiltX = Math.min(tiltX + ts,  tm);
-  if (keys['KeyA']) tiltZ = Math.min(tiltZ + ts,  tm);
-  if (keys['KeyD']) tiltZ = Math.max(tiltZ - ts, -tm);
-  if (!pX) tiltX = Math.abs(tiltX) <= tr ? 0 : tiltX - Math.sign(tiltX) * tr;
-  if (!pZ) tiltZ = Math.abs(tiltZ) <= tr ? 0 : tiltZ - Math.sign(tiltZ) * tr;
+  if (deviceTiltActive) {
+    // Map beta (forward/back) and gamma (left/right) to tiltX/tiltZ
+    // beta positive = phone top tilting away → tilt stage forward (negative tiltX)
+    // gamma positive = phone tilting right → tilt stage right (negative tiltZ)
+    const rawX = -(devBeta  - (devBeta  > 0 ? TILT_DEAD : -TILT_DEAD));
+    const rawZ = -(devGamma - (devGamma > 0 ? TILT_DEAD : -TILT_DEAD));
+    const clampedX = Math.max(-tm, Math.min(tm, rawX * TILT_SCALE * tm));
+    const clampedZ = Math.max(-tm, Math.min(tm, rawZ * TILT_SCALE * tm));
+    tiltX = Math.abs(devBeta)  > TILT_DEAD ? clampedX : 0;
+    tiltZ = Math.abs(devGamma) > TILT_DEAD ? clampedZ : 0;
+  } else {
+    const pX = keys['KeyW'] || keys['KeyS'];
+    const pZ = keys['KeyA'] || keys['KeyD'];
+    if (keys['KeyW']) tiltX = Math.max(tiltX - ts, -tm);
+    if (keys['KeyS']) tiltX = Math.min(tiltX + ts,  tm);
+    if (keys['KeyA']) tiltZ = Math.min(tiltZ + ts,  tm);
+    if (keys['KeyD']) tiltZ = Math.max(tiltZ - ts, -tm);
+    if (!pX) tiltX = Math.abs(tiltX) <= tr ? 0 : tiltX - Math.sign(tiltX) * tr;
+    if (!pZ) tiltZ = Math.abs(tiltZ) <= tr ? 0 : tiltZ - Math.sign(tiltZ) * tr;
+  }
 
   // Rotate tilt vector by camera azimuth so W always tilts away from camera
   const ca = Math.cos(camAzimuth), sa = Math.sin(camAzimuth);
@@ -1915,7 +2006,7 @@ function animate() {
       if (gameMode === 'play') { statJumps++; }
     }
   }
-  const jetThrusting = keys['Space'] && !onFloor && fx.hasJetpack && jetpackFuel > 0;
+  const jetThrusting = (keys['Space'] || touchHeld) && !onFloor && fx.hasJetpack && jetpackFuel > 0;
   if (jetThrusting) {
     vel.y += JETPACK_THRUST * dt;
     jetpackFuel = Math.max(0, jetpackFuel - JETPACK_DRAIN * dt);
